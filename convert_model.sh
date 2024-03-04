@@ -1,0 +1,1 @@
+atc --framework=5 --model="./tiny-llama.onnx"  --output="tiny-llama" --input_format=ND --input_shape="input_ids:1,16;attention_mask:1,1040;position_ids:1,16;past_key_values:22,2,1,4,1024,64" --log=debug --soc_version=Ascend310B1
