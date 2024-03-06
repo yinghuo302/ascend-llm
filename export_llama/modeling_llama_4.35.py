@@ -954,7 +954,7 @@ class LlamaModel(LlamaPreTrainedModel):
 
         next_cache = torch.concat(next_decoder_cache).reshape(len(self.layers),2,*next_decoder_cache[0].shape) if use_cache else None
         if output_attentions:
-            all_self_attns = torch.concat(all_hidden_states).reshape(len(self.layers),*all_hidden_states[0].shape)
+            all_self_attns = torch.concat(all_self_attns).reshape(len(self.layers),*all_self_attns[0].shape)
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
         return BaseModelOutputWithPast(

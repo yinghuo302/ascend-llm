@@ -58,4 +58,4 @@ with torch.no_grad():
     print("Int8 quantization, Prediction:", loss)
     
 test_data = torch.randn(1, input_size).to(device)
-torch.onnx.export(model,test_data,"test_quant.onnx",opset_version=17)
+torch.onnx.export(model,test_data,"test_quant.onnx",opset_version=11)

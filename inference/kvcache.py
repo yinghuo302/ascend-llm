@@ -68,6 +68,7 @@ class Basic(KVCache):
         if seq_len + self.kv_size > self.max_size:
             raise RuntimeError("超出KV缓存长度限制")
         if self.format=="huggingface-tensor":
+            newKV.reshape(self.n_layer,2,1,self.head_num,-1,self.head_dim)
             self.kvCache[:,:,:,:,self.kv_size:self.kv_size+seq_len,:] = newKV[:,:,:,:,0:seq_len,:]
         self.kv_size += seq_len
         self.input_pos+=seq_len
@@ -89,6 +90,7 @@ class FixSize(KVCache):
         if seq_len <= 0:
             return
         if self.format=="huggingface-tensor":
+            newKV.reshape(self.n_layer,2,1,self.head_num,-1,self.head_dim)
             self.kvCache[:,:,:,:,self.real_kv_size:self.real_kv_size+seq_len,:] = newKV[:,:,:,:,0:seq_len,:]
         self.real_kv_size += seq_len
 
