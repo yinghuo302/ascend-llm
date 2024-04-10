@@ -2,8 +2,9 @@ from typing import List
 import numpy as np
 from config import InferenceConfig
 from inference import LlamaInterface
-# cfg=InferenceConfig(tokenizer="/root/zanilia/llama_onnx/tokenizer.model",model="/run/llama-onnx/llama.onnx")
-cfg=InferenceConfig(tokenizer="/root/zanilia/tiny-llama",model="/run/llama-onnx/tiny-llama.onnx")
+# cfg=InferenceConfig(tokenizer="/root/model/llama-7b-chat-hf",model="/root/model/llama-seq-1-key-256-int8.om")
+cfg=InferenceConfig(tokenizer="/root/model/tiny-llama-1.1B",model="/root/model/tiny-llama-seq-1-key-256-int8.om")
+# cfg=InferenceConfig(tokenizer="/root/model/tiny-llama-1.1B",model="/root/model/tiny-llama-onnx-int8/llama.onnx")
 infer_engine=LlamaInterface(cfg)
 
 

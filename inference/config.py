@@ -7,8 +7,8 @@ class InferenceConfig:
     sampling_method: str = "top_k"
     sampling_value: float = 10
     temperature: float = 0.7
-    max_length:int = 256 # 输出长度的最大值
-    session_type:str="onnx"
+    max_length:int = 64 # 输出长度的最大值
+    session_type:str="acl"
     device:int=0
     prompt:str=""
     # prompt:str="[|Human|]Hey there I am a human that would like to have a conversation with you.\n[|AI|]Sure, I am happy to answer most questions\n[|Human|]Great, I insist that we take turns.\n[|AI|]I agree, we should take turns.\n[|Human|]Great, can we also keep answers short\n[|AI|]Yes, short answers are usually best"

@@ -10,17 +10,47 @@ from transformers import LlamaForCausalLM, LlamaTokenizer
 
 def export_onnx(
     base_model: str = "/root/zanilia/tiny-llama",
-    output_dir: str = "/run/llama-onnx/tiny-llama.onnx",
+    output_dir: str = "/run/tiny-llama-onnx/llama.onnx",
 ):
-
+    tokenizer= LlamaTokenizer.from_pretrained(base_model)
+    # from transformers import GPTQConfig
+    # gptq_config = GPTQConfig(bits=8, dataset="wikitext2", tokenizer=tokenizer)
     model = LlamaForCausalLM.from_pretrained(
         base_model,
         torch_dtype=torch.float16,
         device_map="auto",
+        # quantization_config=gptq_config
     )
-
+    quantize_cfg = {
+		"q_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"k_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"v_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"o_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"gate_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"up_proj":{
+			"type":"W8X8",
+			"act_scale":False
+		},"down_proj":{
+			"type":"W8X8",
+			"act_scale":False,
+			"alpha":0.85
+		},
+	}
+    from quantize import quantize
+    quantize(model,cfg=quantize_cfg)
+    
     input_names = ["input_ids", "attention_mask", "position_ids","past_key_values"]
-    output_names = ["logits","out_key_values"]
+    output_names = ["logits","out_key_values","attn_scores"]
     dynamic_axes = {
         "input_ids": { 0: "batch_size", 1: "seq_length" },
         "attention_mask": { 0: "batch_size",1:"all_len" },
@@ -60,8 +90,8 @@ def export_onnx(
         input_names=input_names,
         output_names=output_names,
         dynamic_axes=dynamic_axes,
-        opset_version=17,
-        export_params=True
+        opset_version=13,
+        export_params=True,
     )
     # import onnx
     # onnx_model = onnx.load(
@@ -70,7 +100,7 @@ def export_onnx(
     # onnx.save(
     #     onnx_model,
     #     output_dir,
-    #     save_as_external_data=False,
+    #     save_as_external_data=True,
     # )
 
 

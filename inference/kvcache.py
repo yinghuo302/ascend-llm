@@ -90,7 +90,7 @@ class FixSize(KVCache):
         if seq_len <= 0:
             return
         if self.format=="huggingface-tensor":
-            newKV.reshape(self.n_layer,2,1,self.head_num,-1,self.head_dim)
+            newKV = newKV.reshape(self.n_layer,2,1,self.head_num,-1,self.head_dim)
             self.kvCache[:,:,:,:,self.real_kv_size:self.real_kv_size+seq_len,:] = newKV[:,:,:,:,0:seq_len,:]
         self.real_kv_size += seq_len
 
@@ -107,6 +107,8 @@ class FixSizeStreamLLM(KVCache):
             seq_len -= (self.max_size-self.p)
             self.p = self.head_len
         self.update_part(newKV,self.p,seq_len)
+        self.p += seq_len
+        self.real_kv_size = max(self.p,self.real_kv_size)
 
     def update_part(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],begin:int,len:int):
         if self.format == 'huggingface-tensor': #[n_layer,2,batch_size,head_num,len,head_dim]
@@ -124,16 +126,24 @@ class FixSizeStreamLLM(KVCache):
     
     def reset(self):
         self.p=0
+        self.real_kv_size = 0
         return super().reset()
 
+# 未完成
+# TODO：
 class FixSizeH2O(KVCache):
     def __init__(self,cfg:InferenceConfig) -> None:
         super().__init__(cfg)
         self.scores = np.zeros((self.n_layer,1,self.head_num,self.kv_size),dtype=self.dtype)
     
     def update(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
-        #score [n_layer,batch,nheader,input_len,all_len]
+        # score [n_layer,batch,nheader,input_len,all_len]
         seq_len = newKV[0][0].shape[-2]
+        
+        if self.real_kv_size + seq_len <  self.kv_size:
+            self.kvCache[:,:,:,:,self.real_kv_size:self.real_kv_size+seq_len,:] = newKV
+            self.real_kv_size += seq_len
+            self.scores[:,:,:,:self.real_kv_size] = self.scores[:,:,:,:self.real_kv_size] * 0.5 + score[:,:,:,:self.real_kv_size]
         score = score.sum(-1)
         if self.format == 'huggingface-tensor': #[n_layer,2,batch_size,head_num,len,head_dim]
             # self.kvCache[:,:,:,:,self.p:self.p+len,:] = newKV[:,:,:,:,begin:begin+len,:]
@@ -141,3 +151,9 @@ class FixSizeH2O(KVCache):
                 idx = np.argpartition(score[i],-seq_len)
                 self.kvCache[i,:,idx,:]=newKV[i,:,idx,:]
                 self.scores[i,idx] = score[i,idx]
+                
+    def update_one(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
+        if self.real_kv_size <  self.kv_size:
+            self.kvCache[:,:,:,:,self.real_kv_size,:] = newKV
+            self.real_kv_size += 1
+            self.scores[:,:,:,:self.real_kv_size] = self.scores[:,:,:,:self.real_kv_size] * 0.5 + score[:,:,:,:self.real_kv_size]
