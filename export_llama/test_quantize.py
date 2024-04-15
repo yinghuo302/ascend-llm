@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from quantize import replace_linear_modules
+from quantize import quantize
 # Define your simple model
 class SimpleModel(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -50,7 +50,16 @@ with torch.no_grad():
     print("No quantization, Prediction:", loss)
     
 torch.onnx.export(model,test_data,"test_no_quant.onnx")
-replace_linear_modules(model)
+quantize_cfg = {
+    "fc1":{
+        "type":"W8DX",
+    },"fc2":{
+        "type":"W8DX",
+    },"fc3":{
+        "type":"W8DX",
+    }
+}
+quantize(model,cfg=quantize_cfg)
 
 with torch.no_grad():
     output = model(input_data)
@@ -58,4 +67,4 @@ with torch.no_grad():
     print("Int8 quantization, Prediction:", loss)
     
 test_data = torch.randn(1, input_size).to(device)
-torch.onnx.export(model,test_data,"test_quant.onnx",opset_version=11)
+torch.onnx.export(model,test_data,"test_quant.onnx",opset_version=13)

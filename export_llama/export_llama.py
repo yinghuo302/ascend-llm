@@ -3,14 +3,13 @@ import sys
 from typing import List
 import torch
 import transformers
-
+from quantize import quantize
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
 
-
 def export_onnx(
-    base_model: str = "/root/zanilia/tiny-llama",
-    output_dir: str = "/run/tiny-llama-onnx/llama.onnx",
+    base_model: str = "/run/llama-chat-7b-hf",
+    output_dir: str = "/run/llama-onnx-1/llama.onnx",
 ):
     tokenizer= LlamaTokenizer.from_pretrained(base_model)
     # from transformers import GPTQConfig
@@ -21,32 +20,8 @@ def export_onnx(
         device_map="auto",
         # quantization_config=gptq_config
     )
-    quantize_cfg = {
-		"q_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"k_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"v_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"o_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"gate_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"up_proj":{
-			"type":"W8X8",
-			"act_scale":False
-		},"down_proj":{
-			"type":"W8X8",
-			"act_scale":False,
-			"alpha":0.85
-		},
-	}
-    from quantize import quantize
+    
+    from config.sd import quantize_cfg
     quantize(model,cfg=quantize_cfg)
     
     input_names = ["input_ids", "attention_mask", "position_ids","past_key_values"]
@@ -82,7 +57,7 @@ def export_onnx(
         True # output_attentions: Optional[bool] = None,
     )
 
-
+    model.eval()
     torch.onnx.export(
         model,
         f=output_dir,
@@ -93,16 +68,6 @@ def export_onnx(
         opset_version=13,
         export_params=True,
     )
-    # import onnx
-    # onnx_model = onnx.load(
-    #     output_dir, load_external_data=True
-    # )  # this will probably be too memory heavy for large models
-    # onnx.save(
-    #     onnx_model,
-    #     output_dir,
-    #     save_as_external_data=True,
-    # )
-
 
 if __name__ == "__main__":
     export_onnx()

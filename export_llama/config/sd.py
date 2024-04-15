@@ -1,0 +1,27 @@
+quantize_cfg = {
+    "q_proj":{
+        "type":"W8SD",
+		"act_scale":True,
+    },"k_proj":{
+        "type":"W8SD",
+		"act_scale":True,
+    },"v_proj":{
+        "type":"W8SD",
+		"act_scale":True,
+    },"o_proj":{
+        "type":"W8SD",
+        "act_scale":True,
+    },"gate_proj":{
+        "type":"W8SD",
+		"act_scale":True,
+    },"up_proj":{
+        "type":"W8SD",
+		"act_scale":True,
+    },
+    "down_proj":{
+        "type":"W8SD",
+        "act_scale":True,
+        "alpha":1024
+    },
+	"act_scales_path":"/root/zanilia/export_llama/act_scales/llama-2-7b.pt",
+}

@@ -1,0 +1,20 @@
+quantize_cfg = {
+    "q_proj":{
+        "type":"W8DX",
+    },"k_proj":{
+        "type":"W8DX",
+    },"v_proj":{
+        "type":"W8DX",
+    },"o_proj":{
+        "type":"W8DX",
+    },"gate_proj":{
+        "type":"W8DX",
+    },"up_proj":{
+        "type":"W8DX",
+    },
+    "down_proj":{
+        "type":"W8DX",
+        "alpha":256
+    },
+	"act_scales_path":"/root/zanilia/export_llama/act_scales/llama-2-7b.pt",
+}

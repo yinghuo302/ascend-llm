@@ -1,52 +1,30 @@
 from transformers import AutoTokenizer
 import transformers
 import torch
+from quantize import quantize
 
-# model = "/run/llama-chat-7b-hf"
-model="/root/zanilia/tiny-llama"
+model = "/run/llama-chat-7b-hf"
+# model="/root/zanilia/tiny-llama"
 
 tokenizer = AutoTokenizer.from_pretrained(model)
+tokenizer.pad_token_id = tokenizer.eos_token_id
 pipeline = transformers.pipeline(
     "text-generation",
     model=model,
     torch_dtype=torch.float16,
     device_map="auto",
 )
-quantize_cfg = {
-    "q_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"k_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"v_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"o_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"gate_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"up_proj":{
-        "type":"W8X8",
-        "act_scale":False
-    },"down_proj":{
-        "type":"W8X8",
-        "act_scale":False,
-        "alpha":0.85
-    },
-}
-from quantize import quantize
-# quantize(pipeline.model,act_scales_path="/root/zanilia/quantize/act_scales/llama-2-7b.pt",cfg=quantize_cfg)
+from config.sd import quantize_cfg
 quantize(pipeline.model,cfg=quantize_cfg)
-# from quantize import replace_linear_modules
-# replace_linear_modules(pipeline.model)
-
+# prompt_text = '''### 40 WORD SYNOPSIS of Story Okono
+# Okono is the newest hero introduced to League of Legends. His ultimate power electrocutes all enemies nearby. After Okono is added to the game, Nate plays as Okono obsessively. He wins many games and reaches Challenger.
+# ### 1000 WORD STORY Okono
+# '''
+prompt_text="[|Human|] I am going to Paris, what should I see? \n[|AI|]"
 sequences = pipeline(
-    'I liked "Breaking Bad" and "Band of Brothers". Do you have any recommendations of other shows I might like?\n',
+    prompt_text,
     do_sample=True,
-    top_k=5,
+    top_k=3,
     num_return_sequences=1,
     eos_token_id=tokenizer.eos_token_id,
     max_length=256,
