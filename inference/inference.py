@@ -1,10 +1,11 @@
 import numpy as np
 import os
 from sentencepiece import SentencePieceProcessor
-from typing import Generator, List,Tuple
+from typing import Any, Generator, List,Tuple
 import gc
 from transformers import LlamaTokenizer
 from enum import Enum
+from threading import Lock
 
 class State(Enum):
     Generating=0
@@ -52,15 +53,10 @@ class LlamaInterface:
         self.temperature=config.temperature
         self.session=Session.fromConfig(config)
         self.prompt=config.prompt
-        # self.embeddingLayer = torch.nn.Embedding(
-        #     self.tokenizer.n_words, self.hidden_size
-        # )
-        # d = torch.load(config.embedding_file)
-        # self.embeddingLayer.load_state_dict(d)
-        # self.embeddingLayer.eval()
-        self.clean_history()
+        self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}
+        self.reset()
+        self.lock = Lock()
         print("init success")
-
 
     def generate_cache(self,prompt:str):
         if len(prompt) == 0 :
@@ -110,51 +106,45 @@ class LlamaInterface:
         return next_token
 
     def predict(self, text):
+        with self.lock:
+            self.state['isEnd'],self.state['message'] = False,""        
         if text == "":
-            yield "", State.EmptyText
             return
         text = preprocess(text)
-        input_ids, _ = self.generate_cache(text)
-        input_ids = input_ids.reshape(1, -1)
+        input_ids = np.asarray(self.tokenizer.encode(text, bos=True, eos=False),dtype=np.int64).reshape(1,-1)
+        ids_list = []
         for i in range(self.max_length):
             logits = self.session.run(input_ids)[0]
             input_ids = self.sample_logits(logits[0][-1:], self.sampling_method, self.sampling_value, self.temperature)
             input_ids = input_ids.reshape(1, -1)
+            with self.lock:
+                if input_ids[0] == self.tokenizer.eos_token_id:
+                    self.state['message'],self.state['isEnd'] = self.tokenizer.decode(ids_list),True
+                    break
+                ids_list.append(input_ids[0].item())
+                text_out = self.tokenizer.decode(ids_list)
+                idx = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
+                if idx != 0:
+                    self.state['message'],self.state['isEnd'] = text_out[:-idx].strip(),True
+                    break
+                self.state['message']=text_out
+        with self.lock:
+            self.state['isEnd'] = True 
+        return self.state['message']
 
-            # Stop if/when we get an ENDOFTEXT token before reaching maximum sequence length
-            if input_ids[0] == self.tokenizer.eos_token_id:
-                yield "",State.Success
-                del logits
-                gc.collect()
-                return
-            
-            text_out = self.tokenizer.decode(input_ids[0].item())
-            if is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"]) is False:
-                if "[|Human|]" in text_out:
-                    text_out = text_out[: text_out.index("[|Human|]")].strip()
-                if "[|AI|]" in text_out:
-                    text_out = text_out[: text_out.index("[|AI|]")].strip()
-                text_out = text_out.strip()
-                yield text_out, State.Generating
-            else:
-                yield text_out,State.Success
-                return
-            
-        yield "",State.Success
-
-    def clean_history(self):
+    def reset(self):
         self.session.reset()
         self.generate_cache(self.prompt)
-
+        
+    def getState(self):
+        with self.lock:
+            return self.state.copy()
 
 def preprocess(text:str) -> str:
-    return text
+    return f"[|Human|]{text}\n[|AI|]"
 
-def is_stop_word_or_prefix(s: str, stop_words: list) -> bool:
+def is_stop_word_or_prefix(s: str, stop_words: list) -> int:
     for stop_word in stop_words:
         if s.endswith(stop_word):
-            return True
-        for i in range(1, len(stop_word)):
-            if s.endswith(stop_word[:i]):
-                return True
-    return False
+            return len(stop_word)
+    return 0

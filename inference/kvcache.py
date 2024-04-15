@@ -34,6 +34,9 @@ class KVCache:
 
     def update(self,seq_len:int,newKV:Tuple[List[np.ndarray],List[np.ndarray]],scores:Optional[np.ndarray]=None)->None:
         pass
+    
+    def evict(self,space_need):
+        pass
 
     def getInputs(self, seq_len: int) -> List[np.ndarray]:
         cache = self.kvCache[:,:,:,:,0:self.kv_size]
@@ -102,15 +105,20 @@ class FixSizeStreamLLM(KVCache):
 
     def update(self,seq_len:int,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
         self.input_pos+=seq_len
+        cur = 0
         while self.p + seq_len  > self.max_size:
-            self.update_part(newKV,self.p,self.max_size-self.p)
+            self.update_part(newKV,cur,self.max_size-self.p)
+            cur += (self.max_size-self.p)
             seq_len -= (self.max_size-self.p)
             self.p = self.head_len
-        self.update_part(newKV,self.p,seq_len)
+            self.real_kv_size = self.max_size
+        self.update_part(newKV,cur,seq_len)
         self.p += seq_len
         self.real_kv_size = max(self.p,self.real_kv_size)
 
     def update_part(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],begin:int,len:int):
+        if len == 0:
+            return
         if self.format == 'huggingface-tensor': #[n_layer,2,batch_size,head_num,len,head_dim]
             self.kvCache[:,:,:,:,self.p:self.p+len,:] = newKV[:,:,:,:,begin:begin+len,:]	
         if self.format=='seq_nhead_headdim': # [batch, n_layers, seq_len, n_heads, head_dim]
@@ -122,7 +130,7 @@ class FixSizeStreamLLM(KVCache):
         elif self.format=='huggingface-list': # (n_layer,2) * [batch_size,head_num,len,head_dim]
             for i in range(self.n_layer):
                 self.kvCache[i][0][:,:,self.p:self.p+len,:] = newKV[i][0][:,:,begin:begin+len,:]	
-                self.kvCache[i][1][:,:,self.p:self.p+len,:] = newKV[i][1][:,:,begin:begin+len,:]	
+                self.kvCache[i][1][:,:,self.p:self.p+len,:] = newKV[i][1][:,:,begin:begin+len,:]
     
     def reset(self):
         self.p=0
@@ -135,25 +143,26 @@ class FixSizeH2O(KVCache):
     def __init__(self,cfg:InferenceConfig) -> None:
         super().__init__(cfg)
         self.scores = np.zeros((self.n_layer,1,self.head_num,self.kv_size),dtype=self.dtype)
+        self.idx_head = np.arange(0,self.head_num)
     
     def update(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
-        # score [n_layer,batch,nheader,input_len,all_len]
         seq_len = newKV[0][0].shape[-2]
+        for i in range(seq_len):
+            self.update_one(newKV[:,:,:,:,i,:],score[:,:,:,i,:])
         
-        if self.real_kv_size + seq_len <  self.kv_size:
-            self.kvCache[:,:,:,:,self.real_kv_size:self.real_kv_size+seq_len,:] = newKV
-            self.real_kv_size += seq_len
-            self.scores[:,:,:,:self.real_kv_size] = self.scores[:,:,:,:self.real_kv_size] * 0.5 + score[:,:,:,:self.real_kv_size]
-        score = score.sum(-1)
-        if self.format == 'huggingface-tensor': #[n_layer,2,batch_size,head_num,len,head_dim]
-            # self.kvCache[:,:,:,:,self.p:self.p+len,:] = newKV[:,:,:,:,begin:begin+len,:]
-            for i in range(self.n_layer):
-                idx = np.argpartition(score[i],-seq_len)
-                self.kvCache[i,:,idx,:]=newKV[i,:,idx,:]
-                self.scores[i,idx] = score[i,idx]
                 
     def update_one(self,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
         if self.real_kv_size <  self.kv_size:
             self.kvCache[:,:,:,:,self.real_kv_size,:] = newKV
             self.real_kv_size += 1
             self.scores[:,:,:,:self.real_kv_size] = self.scores[:,:,:,:self.real_kv_size] * 0.5 + score[:,:,:,:self.real_kv_size]
+            return
+        score = score.squeeze(-2)
+        self.scores[:,:,:,:self.real_kv_size] = self.scores[:,:,:,:self.real_kv_size] * 0.5 + score[:,:,:,:self.real_kv_size]
+        for i in range(self.n_layer):
+            min_idx = np.argmin(self.scores[i,0],axis=-1)
+            self.kvCache[i,0,0,self.idx_head,min_idx] = newKV[i,0,0,self.idx_head,-1]
+            self.kvCache[i,1,0,self.idx_head,min_idx] = newKV[i,1,0,self.idx_head,-1]
+            self.scores[i,0,self.idx_head,min_idx]=score[i,0,self.idx_head,-1]
+            
+    
