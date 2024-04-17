@@ -114,28 +114,25 @@ class ACLModel:
             ret = acl.rt.free_host(item["buffer_host"])
         ret = acl.mdl.destroy_dataset(self.output_dataset)
 
-    def inference(self,data) -> List[np.ndarray]:
-        for i in range(len(data)):
-            bytes_data = data[i].tobytes()
+    def inference(self,datas) -> List[np.ndarray]:
+        for i,data in enumerate(datas):
+            bytes_data = data.tobytes()
             np_ptr = acl.util.bytes_to_ptr(bytes_data)
             ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
             check_ret("memcpy", ret)
         ret = acl.mdl.execute(self.model_id, self.input_dataset,self.output_dataset)  
         inference_result = []
-        for out in self.outputs:
+        for idx,out in enumerate(self.outputs):
             ret = acl.rt.memcpy(out['buffer_host'], out["size"],out["buffer"],out["size"],ACL_MEMCPY_DEVICE_TO_HOST)
             bytes_out = acl.util.ptr_to_bytes(out['buffer_host'], out["size"])
-            out_data = np.frombuffer(bytes_out, dtype=out['dtype'])
+            dims, ret = acl.mdl.get_cur_output_dims(self.model_desc, idx)
+            out_data = np.frombuffer(bytes_out, dtype=out['dtype']).reshape(dims['dims'])
             inference_result.append(out_data)
         return inference_result
     
-    def inference_async(self,data,other_args) -> List[np.ndarray]:
-        # print(f"wait lock {other_args[1]}",flush=True)
-        # self.lock.acquire()
-        # print(f"get lock {other_args[1]}",flush=True)
-        for i in range(len(data)):
-            bytes_data = data[i].tobytes()
-            np_ptr = acl.util.bytes_to_ptr(bytes_data)
+    def inference_async(self,datas,other_args) -> List[np.ndarray]:
+        for i,data in enumerate(datas):
+            np_ptr = acl.util.bytes_to_ptr(data.tobytes())
             ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
             check_ret("memcpy", ret)
         ret = acl.mdl.execute_async(self.model_id, self.input_dataset,self.output_dataset,self.stream)
@@ -157,13 +154,12 @@ class ACLModel:
         print("start callback",flush=True)
         time1 = time.time()
         inference_result = []
-        for out in self.outputs:
+        for idx,out in enumerate(self.outputs):
             ret = acl.rt.memcpy(out['buffer_host'], out["size"],out["buffer"],out["size"],ACL_MEMCPY_DEVICE_TO_HOST)
             bytes_out = acl.util.ptr_to_bytes(out['buffer_host'], out["size"])
-            data = np.frombuffer(bytes_out, dtype=out['dtype'])
+            dims, ret = acl.mdl.get_cur_output_dims(self.model_desc, idx)
+            data = np.frombuffer(bytes_out, dtype=out['dtype']).reshape(dims['dims'])
             inference_result.append(data)
-        # self.lock.release()
-        # print(f"free lock {other_args[1]}",flush=True)
         if not self.callback_func:
             return
         self.callback_func(inference_result,other_args)

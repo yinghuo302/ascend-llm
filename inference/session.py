@@ -7,6 +7,7 @@ import sys
 class Session:
 	def __init__(self,config:InferenceConfig) -> None:
 		self.kvCache = KVCache.create(config)
+		self.max_len = config.max_input_len
 
 	def run(self,input_ids:np.ndarray):
 		pass
@@ -22,6 +23,12 @@ class Session:
 	
 	def reset(self):
 		self.kvCache.reset()
+
+	def rollback(self,seq_len):
+		self.kvCache.rollback(seq_len)
+
+	def evict(self,space_need):
+		self.kvCache.evict(space_need)
 	
 class OnnxSession(Session):
 	def __init__(self,config:InferenceConfig)->None:
@@ -40,14 +47,19 @@ class OnnxSession(Session):
 
 	def run(self,input_ids:np.ndarray):
 		seq_len=input_ids.shape[-1]
-		cache,mask,pos_ids = self.kvCache.getInputs(seq_len)
-		result = self.llm_session.run(None,{
-			"input_ids": input_ids,
-			"attention_mask":mask,
-			"past_key_values": cache,
-			"position_ids": pos_ids,
-		})
-		self.kvCache.update(seq_len,result[1])
+		l,r,result = 0,self.max_len,None
+		while l < seq_len:
+			r = min(seq_len,r)
+			cache,mask,pos_ids = self.kvCache.getInputs(r-l)
+			result = self.llm_session.run(None,{
+				"input_ids": input_ids,
+				"attention_mask":mask,
+				"past_key_values": cache,
+				"position_ids": pos_ids,
+			})
+			# result:  [logits,key_values,attn_scores]
+			self.kvCache.update(r-l,result[1],result[2])
+			l , r = l+self.max_len , r + self.max_len
 		return result
 
 class AclSession(Session):
@@ -57,30 +69,17 @@ class AclSession(Session):
 		from engine import ACLModel,initResource
 		self.context = initResource(config.device)
 		self.model = ACLModel(config.model,self.context)
-		self.input_ids = np.zeros((1,16),dtype=np.int64)
+		self.input_ids = np.zeros((1,self.max_len),dtype=np.int64)
 
 	def run(self,input_ids:np.ndarray):
-		seq_len,logits=input_ids.shape[-1],None
-		for i in range(seq_len):
-			logits = self.run_one(input_ids[:,i])
-		return [logits]
-	
-	def run_all_logits(self,input_ids:np.ndarray):
-		seq_len,i = input_ids.shape[-1],0
-		logits = []
-		while i < seq_len:
-			end = i + 16 if i+16 < seq_len else seq_len
-			cache,mask,pos_ids = self.kvCache.getInputs(16)
-			self.input_ids[0:end-i] = input_ids[i:end]
+		seq_len=input_ids.shape[-1]
+		l,r,result = 0,self.max_len,None
+		while l < seq_len:
+			r = min(seq_len,r)
+			self.input_ids[:r-l] = input_ids[l:r]
+			cache,mask,pos_ids = self.kvCache.getInputs(self.max_len)
 			result:List[np.ndarray] = self.model.inference([self.input_ids,mask,pos_ids,cache])
-			self.kvCache.update(end-i,result[1])
-			logits.append(result[0][0:end-i].reshape(1,-1))
-		return [np.concatenate(logits).reshape(1,1,-1)]
-	
-	def run_one(self,input_ids:np.ndarray):
-		cache,mask,pos_ids = self.kvCache.getInputs(1)
-		# begin_time=time.time()
-		result:List[np.ndarray] = self.model.inference([input_ids,mask,pos_ids,cache])
-		# print(f"inference time: {time.time()-begin_time}s")
-		self.kvCache.update(1,result[1])
-		return result[0].reshape(1,1,-1)
+			# result:  [logits,key_values,attn_scores]
+			self.kvCache.update(r-l,result[1],result[2])
+			l , r = l+self.max_len , r + self.max_len
+		return result

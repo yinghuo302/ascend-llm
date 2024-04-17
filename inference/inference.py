@@ -2,18 +2,7 @@ import numpy as np
 import os
 from sentencepiece import SentencePieceProcessor
 from typing import Any, Generator, List,Tuple
-import gc
-from transformers import LlamaTokenizer
-from enum import Enum
 from threading import Lock
-
-class State(Enum):
-    Generating=0
-    EmptyText = 1
-    NoModel=2
-    LongInput=3
-    Success=4
-    Stop=5
 
 class Tokenizer:
     def __init__(self, model_path: str):
@@ -29,7 +18,7 @@ class Tokenizer:
 
         assert self.sp_model.vocab_size() == self.sp_model.get_piece_size()
 
-    def encode(self, s: str, bos: bool, eos: bool) -> List[int]:
+    def encode(self, s: str, bos: bool=True, eos: bool=False) -> List[int]:
         assert type(s) is str
         t = self.sp_model.encode(s)
         if bos:
@@ -46,8 +35,9 @@ from config import InferenceConfig
 class LlamaInterface:
     def __init__(self,config:InferenceConfig) -> None:
         self.max_length = config.max_length
-        # self.tokenizer=Tokenizer(config.tokenizer)
-        self.tokenizer:LlamaTokenizer=LlamaTokenizer.from_pretrained(config.tokenizer)
+        self.tokenizer=Tokenizer(config.tokenizer)
+        # from transformers import LlamaTokenizer
+        # self.tokenizer:LlamaTokenizer=LlamaTokenizer.from_pretrained(config.tokenizer)
         self.sampling_method=config.sampling_method
         self.sampling_value = config.sampling_value
         self.temperature=config.temperature
@@ -56,12 +46,13 @@ class LlamaInterface:
         self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}
         self.reset()
         self.lock = Lock()
+        self.stop_mp = {"[|Human|]":6,"[|AI|]":5}
         print("init success")
 
     def generate_cache(self,prompt:str):
         if len(prompt) == 0 :
             return
-        input_ids = np.asarray(self.tokenizer.encode(prompt, bos=True, eos=False),dtype=np.int64).reshape(1,-1)
+        input_ids = np.asarray(self.tokenizer.encode(prompt),dtype=np.int64).reshape(1,-1)
         logits = self.session.run(input_ids)[0]
         return self.sample_logits(logits[0][-1:],self.sampling_method,self.sampling_value,self.temperature),logits
 
@@ -111,7 +102,7 @@ class LlamaInterface:
         if text == "":
             return
         text = preprocess(text)
-        input_ids = np.asarray(self.tokenizer.encode(text, bos=True, eos=False),dtype=np.int64).reshape(1,-1)
+        input_ids = np.asarray(self.tokenizer.encode(text),dtype=np.int64).reshape(1,-1)
         ids_list = []
         for i in range(self.max_length):
             logits = self.session.run(input_ids)[0]
@@ -123,9 +114,11 @@ class LlamaInterface:
                     break
                 ids_list.append(input_ids[0].item())
                 text_out = self.tokenizer.decode(ids_list)
-                idx = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
-                if idx != 0:
-                    self.state['message'],self.state['isEnd'] = text_out[:-idx].strip(),True
+                stop_word = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
+                if stop_word != "":
+                    self.state['message'],self.state['isEnd'] = text_out[:-len(stop_word)].strip(),True
+                    #!将结束符对应的KVCache rollback
+                    self.session.rollback(self.stop_mp[stop_word]) 
                     break
                 self.state['message']=text_out
         with self.lock:
@@ -140,11 +133,13 @@ class LlamaInterface:
         with self.lock:
             return self.state.copy()
 
+#!将输入转换为指定格式
 def preprocess(text:str) -> str:
-    return f"[|Human|]{text}\n[|AI|]"
+    return f"[|Human|]{text}\n[|AI|]" 
 
+#!判断是否为结束语
 def is_stop_word_or_prefix(s: str, stop_words: list) -> int:
     for stop_word in stop_words:
         if s.endswith(stop_word):
-            return len(stop_word)
-    return 0
+            return stop_word
+    return ""

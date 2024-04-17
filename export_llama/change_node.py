@@ -9,7 +9,7 @@ for node in model.graph.node:
     # 判断节点类型
     new_node = node
     if node.op_type == "Cast":
-        # 替换为新的算子类型
+        # 替换为新的算子类型, 昇腾Cast fp16 -> int8 有精度问题，暂时用AscendQuant
         to_attribute = next(attr for attr in node.attribute if attr.name == "to")
         if to_attribute.i == TensorProto.INT8:
             new_node = helper.make_node(

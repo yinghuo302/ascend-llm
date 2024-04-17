@@ -1,0 +1,1 @@
+在昇腾安装目录tools/msopgen/template/custom_operator_sample/DSL/Onnx有自定义算子模板，将`matmul_integer_plugin.cc`放在算子模板工程目录下的framework/onnx_plugin下，然后进行编译，安装自定义算子，将Onnx的MatmulInteger对应到昇腾CANN的BatchMatmulV2算子。
