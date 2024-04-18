@@ -76,7 +76,7 @@ class AclSession(Session):
 		l,r,result = 0,self.max_len,None
 		while l < seq_len:
 			r = min(seq_len,r)
-			self.input_ids[:r-l] = input_ids[l:r]
+			self.input_ids[:,:r-l] = input_ids[:,l:r]
 			cache,mask,pos_ids = self.kvCache.getInputs(self.max_len)
 			result:List[np.ndarray] = self.model.inference([self.input_ids,mask,pos_ids,cache])
 			# result:  [logits,key_values,attn_scores]

@@ -17,6 +17,7 @@ class KVCache:
         self.fix_size = cfg.kvcache_fixsize
         self.evict_len = cfg.evict_len
         self.recent_len = cfg.recent_len
+        self.num_kv_group = cfg.num_kv_group
         if cfg.dtype == "float16":
             self.dtype=np.float16
         elif cfg.dtype=="float32":
@@ -137,17 +138,19 @@ class SWindow(KVCache):
 
 class StreamLLM(KVCache):
     def __init__(self,cfg:InferenceConfig):
-        super().__init(cfg)
+        super().__init__(cfg)
     
     def update(self,seq_len:int,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
         if self.kv_size + seq_len >= self.max_size:
             self.evict(self.evict_len)
         self.input_pos += seq_len
         self.kvCache[:,:,:,:,self.kv_size:self.kv_size+seq_len] = newKV
+        self.kv_size += seq_len
 
     def evict(self, space_need: int):
-        self.kvCache[:,:,:,:,self.head_len:self.kv_size-space_need + self.head_len] = \
+        self.kvCache[:,:,:,:,self.head_len:self.kv_size -space_need] = \
             self.kvCache[:,:,:,:,self.head_len+space_need:self.kv_size]
+        self.kv_size -= space_need
 
 class H2O(KVCache):
     def __init__(self,cfg:InferenceConfig) -> None:
@@ -157,8 +160,12 @@ class H2O(KVCache):
     
     def update(self,seq_len:int,newKV:Tuple[List[np.ndarray],List[np.ndarray]],score:Optional[np.ndarray] = None):
         # score [n_layer,batch,nheader,input_len,all_len]
+        if self.num_kv_group != 1:
+            score = score.reshape(self.n_layer,1,self.num_kv_group,self.head_num,seq_len,-1).sum(axis=2)
+        else:
+            score = score.copy() # acl 返回的ndarray不可写
         score[:,:,:,:,self.kv_size:self.kv_size+seq_len] = score[:,:,:,:,-seq_len:]
-        if self.kv_size + seq_len >= self.max_size:
+        if self.kv_size + seq_len > self.max_size:
             self.o_score = score
             self.evict(self.evict_len)
             self.o_score,score = None,self.o_score
@@ -173,6 +180,7 @@ class H2O(KVCache):
         
     def evict(self, space_need):
         r_len = self.kv_size - space_need - self.head_len -self.recent_len # 对前head len个KV缓存进行保留
+        new_seq = self.o_score.shape[-2]
         for i in range(self.n_layer):
             idx=np.argpartition(-self.scores[i,0,:,self.head_len:self.kv_size-self.recent_len],r_len,axis=-1)[:,:r_len]
             for j in range(2):
@@ -182,10 +190,10 @@ class H2O(KVCache):
             self.scores[i,0,:,self.head_len:r_len+self.head_len] = self.scores[i,0,self.idx_head,idx]
             self.scores[i,0,:,self.head_len+r_len:self.kv_size-space_need] = \
                 self.scores[i,0,:,self.kv_size-self.recent_len:self.kv_size]
-            new_seq = self.o_score.shape[-2]
             for j in range(new_seq):
                 self.o_score[i,0,:,j,self.head_len:r_len+self.head_len] = self.o_score[i,0,self.idx_head,j,idx]
                 self.o_score[i,0,:,j,self.head_len+r_len:self.kv_size+new_seq-space_need] = \
-                    self.o_score[i,0,:,self.kv_size-self.recent_len:self.kv_size+new_seq]
+                    self.o_score[i,0,:,j,self.kv_size-self.recent_len:self.kv_size+new_seq]
             self.scores[i,0,:,r_len+self.head_len+self.recent_len:] =  0
-            self.kv_size = r_len + self.head_len + self.recent_len
+        self.kv_size = r_len + self.head_len + self.recent_len
+        # self.head_len + r_len + self.recent_len + new_seq

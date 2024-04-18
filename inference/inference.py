@@ -15,7 +15,7 @@ class Tokenizer:
         self.bos_id: int = self.sp_model.bos_id()
         self.eos_id: int = self.sp_model.eos_id()
         self.pad_id: int = self.sp_model.pad_id()
-
+        self.eos_token_id = self.eos_id
         assert self.sp_model.vocab_size() == self.sp_model.get_piece_size()
 
     def encode(self, s: str, bos: bool=True, eos: bool=False) -> List[int]:
@@ -46,7 +46,7 @@ class LlamaInterface:
         self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}
         self.reset()
         self.lock = Lock()
-        self.stop_mp = {"[|Human|]":6,"[|AI|]":5}
+        self.stop_mp = {"[|Human|]":6,"[|AI|]":5,"<|assistant|>":6,"<|user|>":5}
         print("init success")
 
     def generate_cache(self,prompt:str):
@@ -114,7 +114,8 @@ class LlamaInterface:
                     break
                 ids_list.append(input_ids[0].item())
                 text_out = self.tokenizer.decode(ids_list)
-                stop_word = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
+                # stop_word = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
+                stop_word = is_stop_word_or_prefix(text_out,["<|user|>","<|assistant|>"])
                 if stop_word != "":
                     self.state['message'],self.state['isEnd'] = text_out[:-len(stop_word)].strip(),True
                     #!将结束符对应的KVCache rollback
@@ -135,7 +136,8 @@ class LlamaInterface:
 
 #!将输入转换为指定格式
 def preprocess(text:str) -> str:
-    return f"[|Human|]{text}\n[|AI|]" 
+    # return f"[|Human|]{text}\n[|AI|]" 
+    return f'<|user|>\n{text}</s>\n<|assistant|>'
 
 #!判断是否为结束语
 def is_stop_word_or_prefix(s: str, stop_words: list) -> int:
