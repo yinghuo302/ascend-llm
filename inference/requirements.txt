@@ -1,0 +1,6 @@
+# onnxruntime or acl
+onnxruntime
+numpy
+sentencepiece
+flask
+flask_cors
