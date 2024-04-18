@@ -1,16 +1,22 @@
 quantize_cfg = {
     "q_proj":{
         "type":"W8DX",
+		"alpha":64
     },"k_proj":{
         "type":"W8DX",
+		"alpha":64
     },"v_proj":{
         "type":"W8DX",
+		"alpha":64
     },"o_proj":{
         "type":"W8DX",
+		"alpha":64
     },"gate_proj":{
         "type":"W8DX",
+		"alpha":64
     },"up_proj":{
         "type":"W8DX",
+		"alpha":64
     },
     "down_proj":{
         "type":"W8DX",

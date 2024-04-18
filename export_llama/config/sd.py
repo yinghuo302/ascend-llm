@@ -2,21 +2,27 @@ quantize_cfg = {
     "q_proj":{
         "type":"W8SD",
 		"act_scale":True,
+		"alpha":128
     },"k_proj":{
         "type":"W8SD",
 		"act_scale":True,
+		"alpha":128
     },"v_proj":{
         "type":"W8SD",
 		"act_scale":True,
+		"alpha":128
     },"o_proj":{
         "type":"W8SD",
         "act_scale":True,
+		"alpha":128
     },"gate_proj":{
         "type":"W8SD",
 		"act_scale":True,
+		"alpha":128
     },"up_proj":{
         "type":"W8SD",
 		"act_scale":True,
+		"alpha":128
     },
     "down_proj":{
         "type":"W8SD",

@@ -17,4 +17,9 @@ quantize_cfg = {
     #     "act_scale":True,
     #     "alpha":0.85
 	# }
+	# "down_proj":{
+    #     "type":"W8X8",
+    # },"lm_head":{
+    #     "type":"W8X8",
+    # },
 }
