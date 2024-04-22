@@ -137,7 +137,7 @@ class LlamaRotaryEmbedding(nn.Module):
 
     def forward(self, x, seq_len=None):
         return (
-            self.cos_cache.to(dtype=x.dtype),
+            self.cos_cached.to(dtype=x.dtype),
             self.sin_cached.to(dtype=x.dtype),
         )
         # x: [bs, num_attention_heads, seq_len, head_size]
