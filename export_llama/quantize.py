@@ -173,7 +173,7 @@ def quantize(model:nn.Module,smooth:bool=False,act_scales_path:Optional[str]=Non
     act_scales = None
     if 'act_scales_path' in cfg:
         act_scales = torch.load(cfg['act_scales_path'])
-        if smooth:
+        if 'smooth' in cfg:
             from smooth import smooth_lm
             smooth_lm(model, act_scales, 0.85)
     replace_linear_modules(model,'',act_scales,cfg)

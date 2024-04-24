@@ -22,4 +22,5 @@ quantize_cfg = {
     # },"lm_head":{
     #     "type":"W8X8",
     # },
+	# "smooth":True,
 }
