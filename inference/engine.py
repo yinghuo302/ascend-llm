@@ -115,6 +115,7 @@ class ACLModel:
         ret = acl.mdl.destroy_dataset(self.output_dataset)
 
     def inference(self,datas) -> List[np.ndarray]:
+        acl.rt.set_context(self.context)
         for i,data in enumerate(datas):
             bytes_data = data.tobytes()
             np_ptr = acl.util.bytes_to_ptr(bytes_data)
@@ -131,6 +132,7 @@ class ACLModel:
         return inference_result
     
     def inference_async(self,datas,other_args) -> List[np.ndarray]:
+        acl.rt.set_context(self.context)
         for i,data in enumerate(datas):
             np_ptr = acl.util.bytes_to_ptr(data.tobytes())
             ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
