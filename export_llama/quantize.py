@@ -64,7 +64,7 @@ class W8Linear(nn.Module):
         self.bias = None if bias is None else bias.detach()
         self.dtype = origin_weight.dtype
         self.alpha = alpha
-        self.weight_q,self.max_val = quantize_mat(origin_weight)
+        self.weight_q,self.max_val = quantize_mat(origin_weight.detach())
         self.weight_q = nn.Parameter(self.weight_q,requires_grad=False)
         self.max_val = nn.Parameter(self.max_val,requires_grad=False)
 
@@ -110,7 +110,7 @@ class W8SDLinear(nn.Module):
             self.idx_unq,self.t = get_unq_idx_topk(origin_weight,self.alpha)
         self.idx_unq,self.t = self.idx_unq.to(origin_weight.device),self.t.to(origin_weight.device)
         self.weight_q,self.weight_unq = decomposition(origin_weight,self.idx_unq,self.t)
-        self.weight_q,self.w_max = quantize_mat(self.weight_q)
+        self.weight_q,self.w_max = quantize_mat(self.weight_q.detach())
         self.weight_q = nn.Parameter(self.weight_q.t(),requires_grad=False)
         self.weight_unq = nn.Parameter(self.weight_unq.t(),requires_grad=False)
         self.w_max = nn.Parameter(self.w_max,requires_grad=False)
