@@ -70,12 +70,15 @@ def export_onnx(base_model,output_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model", type=str, default="/run/tiny-llama-1.1B-v1.0", help="transformers model"
+        "--model", 
+        type=str, 
+        default="./model/TinyLlama-1.1B-Chat-v1.0", 
+        help="transformers model"
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/run/llama-onnx/tiny-llama.onnx",
+        default="./model/export_out/tiny-llama.onnx",
         help="where to save onnx model",
     )
     args = parser.parse_args()
