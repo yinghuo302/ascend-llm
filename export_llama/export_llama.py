@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 from typing import List
@@ -7,10 +8,7 @@ from quantize import quantize
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
 
-def export_onnx(
-    base_model: str = "/run/llama-chat-7b-hf",
-    output_dir: str = "/run/llama-onnx-1/llama.onnx",
-):
+def export_onnx(base_model,output_dir):
     tokenizer= LlamaTokenizer.from_pretrained(base_model)
     # from transformers import GPTQConfig
     # gptq_config = GPTQConfig(bits=8, dataset="wikitext2", tokenizer=tokenizer)
@@ -21,7 +19,7 @@ def export_onnx(
         # quantization_config=gptq_config
     )
     
-    from config.sd import quantize_cfg
+    from config.w8x8 import quantize_cfg
     quantize(model,cfg=quantize_cfg)
     
     input_names = ["input_ids", "attention_mask", "position_ids","past_key_values"]
@@ -70,4 +68,15 @@ def export_onnx(
     )
 
 if __name__ == "__main__":
-    export_onnx()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model", type=str, default="/run/tiny-llama-1.1B-v1.0", help="transformers model"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="/run/llama-onnx/tiny-llama.onnx",
+        help="where to save onnx model",
+    )
+    args = parser.parse_args()
+    export_onnx(args.model,args.output)
