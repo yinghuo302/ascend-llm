@@ -1,6 +1,6 @@
 # onnxruntime or acl
 onnxruntime
 numpy
-sentencepiece
+transformers
 flask
 flask_cors
