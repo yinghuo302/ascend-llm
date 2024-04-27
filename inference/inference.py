@@ -18,12 +18,14 @@ class LlamaInterface:
         self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}
         self.reset()
         self.lock = Lock()
+        self.first=True
         self.stop_mp = {"[|Human|]":6,"[|AI|]":5,"<|assistant|>":6,"<|user|>":5}
         print("init success")
 
     def generate_cache(self,prompt:str):
         if len(prompt) == 0 :
             return
+        self.first = False
         input_ids = np.asarray(self.tokenizer.encode(prompt),dtype=np.int64).reshape(1,-1)
         logits = self.session.run(input_ids)[0]
         return self.sample_logits(logits[0][-1:],self.sampling_method,self.sampling_value,self.temperature),logits
@@ -74,7 +76,11 @@ class LlamaInterface:
         if text == "":
             return
         text = preprocess(text)
-        input_ids = np.asarray(self.tokenizer.encode(text),dtype=np.int64).reshape(1,-1)
+        input_ids = self.tokenizer.encode(text)
+        if not self.first:
+            input_ids = [29871,13,29966] + input_ids[2:] # 暂时按tiny llama的tokenizer写死token id
+        self.first = False
+        input_ids = np.asarray(input_ids,dtype=np.int64).reshape(1,-1)
         ids_list = []
         for i in range(self.max_length):
             logits = self.session.run(input_ids)[0]
@@ -99,6 +105,7 @@ class LlamaInterface:
         return self.state['message']
 
     def reset(self):
+        self.first = True
         self.session.reset()
         self.generate_cache(self.prompt)
         
