@@ -2,12 +2,43 @@ import time
 from typing import Dict, List
 import acl
 import numpy as np
-
+import os
+import ctypes
+from ctypes import c_void_p, c_int, c_size_t, c_ulong, c_int64,POINTER
 ACL_MEM_MALLOC_HUGE_FIRST = 0
 ACL_MEMCPY_HOST_TO_DEVICE = 1
 ACL_MEMCPY_DEVICE_TO_HOST = 2
 ACL_MEM_MALLOC_NORMAL_ONLY = 2
 NPY_FLOAT32 = 11
+
+libc = ctypes.CDLL("libc.so.6")
+# mmap函数原型
+mmap_func = libc.mmap
+mmap_func.argtypes = [c_void_p, c_size_t, c_int, c_int, c_int, c_int64]
+mmap_func.restype = c_void_p
+
+# munmap函数原型
+munmap_func = libc.munmap
+munmap_func.argtypes = [c_void_p, c_size_t]
+munmap_func.restype = c_int
+def mmap_file(file_path):  
+    # 打开文件并获取文件描述符  
+    file_descriptor = os.open(file_path, os.O_RDONLY)  
+    file_size = os.lseek(file_descriptor, 0, os.SEEK_END)  
+    os.lseek(file_descriptor, 0, os.SEEK_SET)  
+    # 调用mmap映射文件到内存  
+    # PROT_READ和MAP_PRIVATE的值可能因系统而异，这里假设为1和2  
+    protection_flags = 1  # PROT_READ  
+    visibility_flags = 2  # MAP_PRIVATE  
+    mapped_memory = mmap_func(None, file_size, protection_flags, visibility_flags, file_descriptor, 0)    
+    if mapped_memory == -1:  
+        raise Exception("Error mapping the file.")  
+
+    # 关闭文件描述符，映射区域仍然有效  
+    os.close(file_descriptor)  
+    
+    # 返回映射区域的地址  
+    return mapped_memory,file_size
 def check_ret(str,ret):
     if ret != 0:
         print(f"return code is {ret}, detail: {str}",flush=True) 
@@ -63,10 +94,26 @@ class ACLModel:
         self.freeMem()
         self.unloadModel()
 
+  
 
     def loadModel(self, model_path):
-        self.model_id, ret = acl.mdl.load_from_file(model_path)
+        '''
+        model_size = os.path.getsize(model_path)
+        
+        work_size, weight_size, ret = acl.mdl.query_size(model_path)
+        weight_size = max(model_size,weight_size)
+        work_ptr, ret= acl.rt.malloc_host(work_size)
+        model = acl.rt.malloc_host(weight_size)
+        with open(model_path, 'rb') as file:
+            model = file.read()
+        self.model_id, ret = acl.mdl.load_from_mem_with_mem(id(model), weight_size, work_ptr, work_size, id(model), weight_size)
+        '''
+        model_add, model_size = mmap_file(model_path)
+        self.model_id, ret = acl.mdl.load_from_mem(model_add, model_size)
+        
+        #self.model_id, ret = acl.mdl.load_from_file(model_path)
         check_ret("load model",ret)
+        munmap_func(model_add, model_size)
         self.model_desc = acl.mdl.create_desc()
         ret = acl.mdl.get_desc(self.model_desc, self.model_id)
         check_ret("get model desc",ret)
