@@ -2,9 +2,9 @@ import numpy as np
 import os
 from typing import Any, Generator, List,Tuple
 from threading import Lock
-
 from session import Session
 from config import InferenceConfig
+
 class LlamaInterface:
     def __init__(self,config:InferenceConfig) -> None:
         self.max_length = config.max_length

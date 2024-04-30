@@ -1,21 +1,14 @@
+import argparse
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from config import InferenceConfig
 from inference import LlamaInterface
-# cfg=InferenceConfig(tokenizer="/root/model/llama-7b-chat-hf",model="/root/model/llama-seq-1-key-256-int8.om")
-cfg=InferenceConfig(tokenizer="/root/model/tiny-llama-1.1B",model="/root/model/tiny-llama-seq-1-key-256-int8.om")
-# cfg=InferenceConfig(tokenizer="/root/model/tiny-llama-1.1B",model="/root/model/tiny-llama-onnx-int8/llama.onnx")
-infer_engine=LlamaInterface(cfg)
 
-def inference_cli():
-    while True:
-        line = input()
-        print(infer_engine.predict(line))
-        
-def main():
+def main(cli:bool,engine:LlamaInterface):
     if len(sys.argv) > 1:
-        inference_cli()
-        return
+        while True:
+            line = input()
+            print(engine.predict(line))
     from flask import Flask, request, jsonify
     from flask import render_template  # 引入模板插件
     from flask_cors import CORS
@@ -38,16 +31,16 @@ def main():
         msg = request.get_json(force=True)['message']
         if len(msg) == 0:
             return jsonify({"code": 404})
-        pool.submit(infer_engine.predict,msg)
+        pool.submit(engine.predict,msg)
         return jsonify({"code": 200})
 
     @app.route("/api/getMsg", methods=["GET"])
     def getMsg():
-        return jsonify(infer_engine.getState())
+        return jsonify(engine.getState())
     
     @app.route("/api/reset", methods=["GET"])
     def reset():
-        infer_engine.reset()
+        engine.reset()
         return jsonify({"code": 200})
 
     app.run(
@@ -57,4 +50,45 @@ def main():
     )
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--cli', dest='cli', default=False, action='store_true',
+        help="run web ui by default, if add --cli, run cli."
+    )
+    parser.add_argument("--kv_size", type=int, default=256)
+    parser.add_argument(
+        "--engine", type=str, default="acl",
+        help="inference backend, onnx or acl"
+    )
+    parser.add_argument(
+        "--sampling", type=str, default="top_k",
+        help="sampling method, greedy, top_k or top_p"
+    )
+    parser.add_argument(
+        "--sampling_value",type=float,default=10,
+        help="if sampling method is seted to greedy, this argument will be ignored; if top_k, it means value of p; if top_p, it means value of p"
+    )
+    parser.add_argument(
+        "--temperature",type=float,default=0.7,
+        help="sampling temperature if sampling method is seted to greedy, this argument will be ignored."
+    )
+    parser.add_argument(
+        "--hf-dir", type=str, default="/root/model/tiny-llama-1.1B", 
+        help="path to huggingface model dir"
+    )
+    parser.add_argument(
+        "--model", type=str, default="/root/model/tiny-llama-seq-1-key-256-int8.om", 
+        help="path to onnx or om model"
+    )
+    args = parser.parse_args()
+    cfg = InferenceConfig(
+        hf_model_dir=args.hf_dir,
+        model=args.model,
+        max_cache_size=args.kv_size,
+        sampling=args.sampling,
+        sampling_value=args.sampling_value,
+        temperature=args.temperature,
+        session_type=args.engine,
+    )
+    engine = LlamaInterface(cfg)
+    main(args.cli,engine)

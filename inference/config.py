@@ -1,11 +1,14 @@
 from dataclasses import dataclass,field
 from typing import Optional,Union,List
+import os
+import json
 
 @dataclass
 class InferenceConfig:
     tokenizer: str = ""
-    sampling_method: str = "top_k"
-    sampling_value: float = 10
+    hf_model_dir:str = ""
+    sampling_method: str = "top_k" # "greedy" | "top_k" | "top_p"
+    sampling_value: float = 10 # k for top_k p for top_p
     temperature: float = 0.7
     max_length:int = 512 # 输出长度的最大值
     max_input_len:int = 1 # 每次推理输入的最大长度为max_input_len，对om目前设置为1
@@ -32,6 +35,18 @@ class InferenceConfig:
     def __post_init__(self):
         self.evict_len = int(min((self.max_cache_size - self.head_len )/2,self.evict_len ))
         self.max_input_len = int(min(self.max_input_len,self.evict_len))
+        assert(self.kvcache_method in ["basic","sliding-window",'streamllm','H2O'])
+        assert(os.path.isdir(self.hf_model_dir))
+        assert(self.session_type in ["acl","onnx"])
+        self.tokenizer = self.hf_model_dir
+        model_desc = None
+        with open(self.hf_model_dir+"/config.json") as f:
+            model_desc = json.load(f)
+        self.n_layer = model_desc['num_hidden_layers']
+        self.head_num = model_desc['num_key_value_heads']
+        self.num_kv_group = int(model_desc['num_attention_heads'] / self.head_num)
+        self.hidden_dim = model_desc["hidden_size"]
+        self.head_dim = int(self.head_dim / model_desc['num_attention_heads'])
         if self.kvcache_method == "streamllm":
             assert(self.head_len+self.evict_len < self.max_cache_size)
         if self.kvcache_method == "H2O":
