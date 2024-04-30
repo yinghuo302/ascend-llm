@@ -9,7 +9,6 @@ ACL_MEM_MALLOC_HUGE_FIRST = 0
 ACL_MEMCPY_HOST_TO_DEVICE = 1
 ACL_MEMCPY_DEVICE_TO_HOST = 2
 ACL_MEM_MALLOC_NORMAL_ONLY = 2
-NPY_FLOAT32 = 11
 
 libc = ctypes.CDLL("libc.so.6")
 # mmap函数原型
@@ -57,10 +56,12 @@ def destroyResource(device,context):
     ret = acl.finalize()
     ret = acl.rt.destroy_context(context)
 
-dtype2NpType = {0:np.float32,1:np.float16,2:np.int8,3:np.int32,9:np.int64}
-
+ACL_FLOAT,ACL_FLOAT16,ACL_INT8,ACL_INT32,ACL_INT64 = 0,1,2,3,9
+NPY_FLOAT32,NPY_FLOAT16,NPY_INT8,NPY_INT32,NPY_INT64 = 11,23,1,5,7
+dtype2NpType = {ACL_FLOAT:np.float32,ACL_FLOAT16:np.float16,ACL_INT8:np.int8,ACL_INT32:np.int32,ACL_INT64:np.int64}
+dtypeMp = {ACL_FLOAT:NPY_FLOAT32,ACL_FLOAT16:NPY_FLOAT16,ACL_INT8:NPY_INT8,ACL_INT32:NPY_INT32,ACL_INT64:NPY_INT64}
 class ACLModel:
-    def __init__(self,model_path,context=None,callback=None):
+    def __init__(self,model_path,mode="rc",context=None,callback=None):
         self.context = context
         self.model_id = None
         self.model_desc = None
@@ -69,9 +70,12 @@ class ACLModel:
         self.stream = None
         self.callback_interval = 1
         self.exit_flag = False
+        self.mode = mode
         self.input_dataset, self.output_dataset = None, None
         self.inputs:List[Dict[str,]] = []
         self.outputs:List[Dict[str,]] =  []
+        self.in_arrs:List[np.ndarray] = []
+        self.out_arrs:List[np.ndarray] = []
         self.loadModel(model_path)
         self.allocateMem()
         if not callback:
@@ -92,9 +96,7 @@ class ACLModel:
             ret = acl.util.stop_thread(self.tid)
             ret = acl.rt.destroy_stream(self.stream)
         self.freeMem()
-        self.unloadModel()
-
-  
+        self.unloadModel()  
 
     def loadModel(self, model_path):
         '''
@@ -127,7 +129,6 @@ class ACLModel:
     def allocateMem(self):
         self.input_dataset = acl.mdl.create_dataset()
         input_size = acl.mdl.get_num_inputs(self.model_desc)
-        self.inputs = []
         for i in range(input_size):
             buffer_size = acl.mdl.get_input_size_by_index(self.model_desc, i)
             buffer, ret = acl.rt.malloc(buffer_size, ACL_MEM_MALLOC_HUGE_FIRST)
@@ -135,11 +136,15 @@ class ACLModel:
             data = acl.create_data_buffer(buffer, buffer_size)
             _, ret = acl.mdl.add_dataset_buffer(self.input_dataset, data)
             check_ret("add_dataset_buffer",ret)
+            dims, ret = acl.mdl.get_input_dims(self.model_desc, i)
             self.inputs.append({"buffer": buffer, "size": buffer_size})
+            if self.mode == 'rc':
+                data_type = acl.mdl.get_input_data_type(self.model_desc, i)
+                self.in_arrs.append(acl.util.ptr_to_numpy(buffer,tuple(dims['dims']),dtypeMp[data_type]))
 
         self.output_dataset = acl.mdl.create_dataset()
         output_size = acl.mdl.get_num_outputs(self.model_desc)
-        self.outputs = []
+        buffer_host = None
         for i in range(output_size):
             buffer_size = acl.mdl.get_output_size_by_index(self.model_desc, i)
             data_type = acl.mdl.get_output_data_type(self.model_desc, i)
@@ -148,9 +153,13 @@ class ACLModel:
             data = acl.create_data_buffer(buffer, buffer_size)
             _, ret = acl.mdl.add_dataset_buffer(self.output_dataset, data)
             check_ret("add_dataset_buffer",ret)
-            buffer_host, ret = acl.rt.malloc_host(buffer_size)
-            check_ret("alloc output host memory",ret)
-            self.outputs.append({"buffer": buffer, "size": buffer_size,'buffer_host':buffer_host,'dtype':dtype2NpType[data_type]})
+            dims, ret = acl.mdl.get_output_dims(self.model_desc, i)
+            if self.mode == 'rc':
+                self.out_arrs.append(acl.util.ptr_to_numpy(buffer,tuple(dims['dims']),dtypeMp[data_type]))
+            else:
+                buffer_host, ret = acl.rt.malloc_host(buffer_size)
+                check_ret("alloc output host memory",ret)
+                self.outputs.append({"buffer": buffer, "size": buffer_size,'buffer_host':buffer_host,'dtype':dtype2NpType[data_type]})
 
     def freeMem(self):
         for item in self.input_data:
@@ -158,17 +167,28 @@ class ACLModel:
         ret = acl.mdl.destroy_dataset(self.input_dataset)
         for item in self.output_data:
             ret = acl.rt.free(item["buffer"])
-            ret = acl.rt.free_host(item["buffer_host"])
+            if self.mode != 'rc':
+                ret = acl.rt.free_host(item["buffer_host"])
         ret = acl.mdl.destroy_dataset(self.output_dataset)
+        
+    def getInputs(self):
+        return self.in_arrs # 获取输入np数组，可以直接修改
 
     def inference(self,datas) -> List[np.ndarray]:
         acl.rt.set_context(self.context)
-        for i,data in enumerate(datas):
-            bytes_data = data.tobytes()
-            np_ptr = acl.util.bytes_to_ptr(bytes_data)
-            ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
-            check_ret("memcpy", ret)
-        ret = acl.mdl.execute(self.model_id, self.input_dataset,self.output_dataset)  
+        if self.mode == 'rc':
+            for i,data in enumerate(datas):
+                self.in_arrs[i][:] = data[:] # 如果输入的np数组和in_arrs中是一个数组则不会发生拷贝
+        else:
+            for i,data in enumerate(datas):
+                bytes_data = data.tobytes()
+                np_ptr = acl.util.bytes_to_ptr(bytes_data)
+                ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
+                check_ret("memcpy", ret)
+        ret = acl.mdl.execute(self.model_id, self.input_dataset,self.output_dataset)
+        check_ret("execute", ret)
+        if self.mode == 'rc':
+            return self.out_arrs
         inference_result = []
         for idx,out in enumerate(self.outputs):
             ret = acl.rt.memcpy(out['buffer_host'], out["size"],out["buffer"],out["size"],ACL_MEMCPY_DEVICE_TO_HOST)
@@ -180,10 +200,14 @@ class ACLModel:
     
     def inference_async(self,datas,other_args) -> List[np.ndarray]:
         acl.rt.set_context(self.context)
-        for i,data in enumerate(datas):
-            np_ptr = acl.util.bytes_to_ptr(data.tobytes())
-            ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
-            check_ret("memcpy", ret)
+        if self.mode == 'rc':
+            for i,data in enumerate(datas):
+                self.in_arrs[i][:] = data[:]
+        else:
+            for i,data in enumerate(datas):
+                np_ptr = acl.util.bytes_to_ptr(data.tobytes())
+                ret = acl.rt.memcpy(self.inputs[i]["buffer"], self.inputs[i]["size"], np_ptr,self.inputs[i]["size"], ACL_MEMCPY_HOST_TO_DEVICE)
+                check_ret("memcpy", ret)
         ret = acl.mdl.execute_async(self.model_id, self.input_dataset,self.output_dataset,self.stream)
         check_ret("exec_async", ret)
         print(f"submit exec task {other_args[1]}")
@@ -203,12 +227,15 @@ class ACLModel:
         print("start callback",flush=True)
         time1 = time.time()
         inference_result = []
-        for idx,out in enumerate(self.outputs):
-            ret = acl.rt.memcpy(out['buffer_host'], out["size"],out["buffer"],out["size"],ACL_MEMCPY_DEVICE_TO_HOST)
-            bytes_out = acl.util.ptr_to_bytes(out['buffer_host'], out["size"])
-            dims, ret = acl.mdl.get_cur_output_dims(self.model_desc, idx)
-            data = np.frombuffer(bytes_out, dtype=out['dtype']).reshape(dims['dims'])
-            inference_result.append(data)
+        if self.mode == 'rc':
+            inference_result = self.out_arrs
+        else:
+            for idx,out in enumerate(self.outputs):
+                ret = acl.rt.memcpy(out['buffer_host'], out["size"],out["buffer"],out["size"],ACL_MEMCPY_DEVICE_TO_HOST)
+                bytes_out = acl.util.ptr_to_bytes(out['buffer_host'], out["size"])
+                dims, ret = acl.mdl.get_cur_output_dims(self.model_desc, idx)
+                data = np.frombuffer(bytes_out, dtype=out['dtype']).reshape(dims['dims'])
+                inference_result.append(data)
         if not self.callback_func:
             return
         self.callback_func(inference_result,other_args)

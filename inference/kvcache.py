@@ -22,6 +22,7 @@ class KVCache:
             self.dtype=np.float16
         elif cfg.dtype=="float32":
             self.dtype=np.float32
+        self.createEmptyCache()
 
     def createEmptyCache(self):
         if self.format == "huggingface-tensor":
@@ -54,7 +55,6 @@ class KVCache:
     def reset(self):
         self.input_pos=0
         self.kv_size=0
-        self.createEmptyCache()
     
     def rollback(self,seq_len):
         self.kv_size -=seq_len

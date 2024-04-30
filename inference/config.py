@@ -10,6 +10,7 @@ class InferenceConfig:
     max_length:int = 512 # 输出长度的最大值
     max_input_len:int = 1 # 每次推理输入的最大长度为max_input_len，对om目前设置为1
     session_type:str="acl" # onnx或者acl
+    acl_mode="rc" #rc模式下host和device是同一块内存，可以对执行流程进行优化
     device:int=0
     prompt:str=""
     # prompt:str="[|Human|]Hey there I am a human that would like to have a conversation with you.\n[|AI|]Sure, I am happy to answer most questions\n[|Human|]Great, I insist that we take turns.\n[|AI|]I agree, we should take turns."

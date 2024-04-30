@@ -68,8 +68,10 @@ class AclSession(Session):
 		super().__init__(config)
 		from engine import ACLModel,initResource
 		self.context = initResource(config.device)
-		self.model = ACLModel(config.model,self.context)
+		self.model = ACLModel(config.model,self.context,mode=config.acl_mode)
 		self.input_ids = np.zeros((1,self.max_len),dtype=np.int64)
+		if config.acl_mode == 'rc':
+			self.input_ids,_,_,self.kvCache.kvCache = self.model.getInputs()
 
 	def run(self,input_ids:np.ndarray):
 		seq_len=input_ids.shape[-1]
