@@ -21,7 +21,7 @@ matmulInteger = MatMulInteger.apply
 def quantize_mat(mat:Tensor)-> Tuple[Tensor,Tensor]:
     # max_val = torch.max(torch.abs(mat),dim=-1)[0]
     # mat =  (mat * (127 / max_val)[...,None]).to(dtype=torch.int8)
-    max_val = (torch.max(torch.abs(mat),dim=-1)[0] / 127.0).to(dtype=torch.float16)
+    max_val = (torch.max(torch.abs(mat),dim=-1)[0] / 127.0).to(dtype=mat.dtype)
     mat =  (mat / max_val[...,None]).to(dtype=torch.int8)
     return mat, max_val
 
@@ -153,23 +153,26 @@ quant_cls = {
     "W8X8":W8X8Linear,
     "W8SD":W8SDLinear,
     "W8DX":W8DXLinear
-}
-
-# mp = {"q_proj":4.,"k_proj":4.,"v_proj":4.,"o_proj":4.,"gate_proj":4.,"up_proj":4.,"down_proj":4.}
+}         
+        
 def replace_linear_modules(module:nn.Module,prefix:str,act_scales,cfg):
     for name, child in module.named_children():
-        prefix_next = (prefix + '.' + name) if prefix != '' else name
-        if isinstance(child, nn.Linear) and name in cfg:
-            act_scale = None if act_scales is None or 'act_scale' not in cfg[name] else act_scales[prefix_next]
-            alpha = 128 if 'alpha' not in cfg[name] else cfg[name]['alpha']
-            # mp[name] = mp[name]-0.125
-            # alpha = int(alpha >> int(min(mp[name],3.)))
-            setattr(module, name,quant_cls[cfg[name]['type']]
+        fullname = (prefix + '.' + name) if prefix != '' else name
+        if isinstance(child, nn.Linear):
+            strs = fullname.split(".")
+            # fullname: model.layers.21.self_attn.q_proj layer_name: 21.q_proj; name: q_proj
+            # fullname: lm_head; layer_name: 21.q_proj; name: q_proj;
+            layer_name = (strs[-3] + "." + strs[-1]) if len(strs) > 2 else strs[-1]
+            if layer_name not in cfg:
+                continue
+            act_scale = None if act_scales is None or 'act_scale' not in cfg[layer_name] else act_scales[fullname]
+            alpha = 32 if 'alpha' not in cfg[layer_name] else cfg[layer_name]['alpha']
+            setattr(module, name,quant_cls[cfg[layer_name]['type']]
                     (child.weight,child.bias,act_max=act_scale,alpha=alpha))
         else:
-            replace_linear_modules(child,prefix_next,act_scales,cfg)
+            replace_linear_modules(child,fullname,act_scales,cfg)
 
-def quantize(model:nn.Module,smooth:bool=False,act_scales_path:Optional[str]=None,cfg={}):
+def quantize(model:nn.Module,cfg={}):
     act_scales = None
     if 'act_scales_path' in cfg:
         act_scales = torch.load(cfg['act_scales_path'])

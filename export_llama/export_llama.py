@@ -1,26 +1,24 @@
 import argparse
-import os
-import sys
-from typing import List
+import importlib
 import torch
-import transformers
-from quantize import quantize
+import os
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
 
-def export_onnx(base_model,output_dir):
+def export_onnx(base_model,out_path,quant_cfg_path,act_path):
     tokenizer= LlamaTokenizer.from_pretrained(base_model)
-    # from transformers import GPTQConfig
-    # gptq_config = GPTQConfig(bits=8, dataset="wikitext2", tokenizer=tokenizer)
     model = LlamaForCausalLM.from_pretrained(
         base_model,
         torch_dtype=torch.float16,
         device_map="auto",
-        # quantization_config=gptq_config
     )
-    
-    from config.w8x8 import quantize_cfg
-    quantize(model,cfg=quantize_cfg)
+    model_cfg=model.model.config
+    spec = importlib.util.spec_from_file_location("quant_cfg_module", quant_cfg_path)
+    quant_cfg_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(quant_cfg_module)
+    quantize_cfg = quant_cfg_module.get(model_cfg,act_path)
+    from quantize import quantize
+    quantize(model,quantize_cfg)
     
     input_names = ["input_ids", "attention_mask", "position_ids","past_key_values"]
     output_names = ["logits","out_key_values","attn_scores"]
@@ -30,11 +28,11 @@ def export_onnx(base_model,output_dir):
         "position_ids": { 0: "batch_size", 1: "seq_length" },
         "past_key_values": { 2: "batch_size", 4: "kv_len" },
     }
-    cfg=model.model.config
+    
     batch_size,seq_len,kv_len=1,16,1024
     all_len = seq_len + kv_len
-    n_layers,n_heads,hidden_size=cfg.num_hidden_layers,cfg.num_key_value_heads,cfg.hidden_size
-    head_dim = int(cfg.hidden_size / cfg.num_attention_heads)
+    n_layers,n_heads,hidden_size=model_cfg.num_hidden_layers,model_cfg.num_key_value_heads,model_cfg.hidden_size
+    head_dim = int(model_cfg.hidden_size / model_cfg.num_attention_heads)
 
 
     input_ids = torch.zeros((batch_size,seq_len)).long().to("cuda") # batch_size, new_sequence_length
@@ -58,7 +56,7 @@ def export_onnx(base_model,output_dir):
     model.eval()
     torch.onnx.export(
         model,
-        f=output_dir,
+        f=out_path,
         args=input_args,
         input_names=input_names,
         output_names=output_names,
@@ -68,18 +66,32 @@ def export_onnx(base_model,output_dir):
     )
 
 if __name__ == "__main__":
+    import os
+    os.chdir(os.path.dirname(__file__))
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model", 
+        "--model", "-m",
         type=str, 
         default="./model/TinyLlama-1.1B-Chat-v1.0", 
         help="transformers model"
     )
     parser.add_argument(
-        "--output",
+        "--output","-o",
         type=str,
         default="./model/export_out/tiny-llama.onnx",
         help="where to save onnx model",
     )
+    parser.add_argument(
+        "--act-path","-a",
+        type=str,
+        default="./act_scales/llama-2-7b.pt",
+        help="path to act_scales",
+    )
+    parser.add_argument(
+        "--quant","-q",
+        type=str,
+        default="./config/w8x8.py",
+        help="path to quant config",
+    )
     args = parser.parse_args()
-    export_onnx(args.model,args.output)
+    export_onnx(args.model,args.output,args.quant,args.act_path)

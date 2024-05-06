@@ -1,26 +1,9 @@
-quantize_cfg = {
-    "q_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },"k_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },"v_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },"o_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },"gate_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },"up_proj":{
-        "type":"W8DX",
-		"alpha":64
-    },
-    "down_proj":{
-        "type":"W8DX",
-        "alpha":256
-    },
-	"act_scales_path":"/root/zanilia/export_llama/act_scales/llama-2-7b.pt",
-}
+def get(model_cfg,act_max):
+	quant_cfg = {}
+	for i in range(model_cfg.num_hidden_layers):
+		for name in ["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"]:
+			quant_cfg[str(i)+"."+name] = {"type":"W8DX"}
+	# quant_cfg["lm_head"] = {"type":"W8DX"}  # 可以根据需要取消注释
+	# quant_cfg["act_scales_path"] = act_max # 可以根据需要取消注释
+	# quant_cfg["smooth"] = True # 可以根据需要取消注释
+	return quant_cfg
