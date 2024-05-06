@@ -23,28 +23,10 @@ def lm_eval_fn(args):
         num_fewshot=0,
         task_manager=task_manager,
     )
-    with open('eval_origin.json', 'w') as f:
-        json.dump(results, f)
-    table_str = make_table(results)
-    with open('eval_origin_table.txt', 'w') as f:
-        json.dump(table_str, f)
-    print_(table_str)
-
-    from quantize import quantize
-    from config.w8x8 import quantize_cfg
-    quantize(lm_obj._model,cfg=quantize_cfg)
-    results = lm_eval.simple_evaluate( # call simple_evaluate
-        model=lm_obj,
-        tasks=args.tasks,
-        num_fewshot=0,
-        task_manager=task_manager,
-    )
-    with open('eval_quant.json', 'w') as f:
-        json.dump(results, f)
-    table_str = make_table(results)
-    with open('eval_quant_table.txt', 'w') as f:
-        json.dump(table_str, f)
-    print_(table_str)
+    # now = datetime.datetime.now()
+    # with open(f'eval-{now.month:02}-{now.day:02}-{now.hour:02}:{now.minute:02}:{now.second:02}.json', 'w') as f:
+    #     json.dump(results, f)
+    print_(make_table(results))    
 
 def ppl_eval_fn(args):
     global print_
