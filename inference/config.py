@@ -6,7 +6,7 @@ import json
 @dataclass
 class InferenceConfig:
     tokenizer: str = ""
-    hf_model_dir:str = ""
+    hf_model_dir:str = "" # huggingface 模型目录，包含tokenizer和config.json
     sampling_method: str = "top_k" # "greedy" | "top_k" | "top_p"
     sampling_value: float = 10 # k for top_k p for top_p
     temperature: float = 0.7

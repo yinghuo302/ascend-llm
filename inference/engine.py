@@ -159,7 +159,7 @@ class ACLModel:
             else:
                 buffer_host, ret = acl.rt.malloc_host(buffer_size)
                 check_ret("alloc output host memory",ret)
-                self.outputs.append({"buffer": buffer, "size": buffer_size,'buffer_host':buffer_host,'dtype':dtype2NpType[data_type]})
+            self.outputs.append({"buffer": buffer, "size": buffer_size,'buffer_host':buffer_host,'dtype':dtype2NpType[data_type]})
 
     def freeMem(self):
         for item in self.input_data:
