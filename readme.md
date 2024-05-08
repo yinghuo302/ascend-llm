@@ -14,17 +14,17 @@
 ## 关键技术
 - 静态图方案
 
-    在Transformer模型中，基于模型的自回归推理特性，业界普遍采用kvcache缓存的方式增加模型的推理性能.kvcache会缓存上一次推理得到的kv矩阵用于本次推理，大大减少了推理计算量。
+    在Transformer模型中，基于模型的自回归推理特性，业界普遍采用kvcache缓存的方式增加模型的推理性能。kvcache会缓存上一次推理得到的kv矩阵用于本次推理，大大减少了推理计算量。
     
     由于缓存的kv矩阵要和当前输入字符计算出的kv矩阵进行拼接，因此每次推理完整的kv矩阵长度一直在增加，致使模型shape不固定，会走动态推理流程，存在大量算子编译时间，推理性能大大下降。
     
-    本方案基于原先动态图方案，将kv矩阵固定到一个最大长度，结合attention_mask屏蔽输入序列部分位置的特性实现了静态图的方案.在kvcache达到上限时通过主动清理kvcache的方式让模型可以反复推理。
+    本方案基于原先动态图方案，将kv矩阵固定到一个最大长度，结合attention_mask屏蔽输入序列部分位置的特性实现了静态图的方案。在kvcache达到上限时通过KV缓存驱逐（[StreamingLLM](https://arxiv.org/abs/2309.17453)和[Heavy-Hitter Oracle](https://arxiv.org/abs/2306.14048)）让模型可以反复推理。
 
 - 量化方案
 
     大模型权重过大，在端侧设备由于内存限制通常难以运行，因此通常将大模型权重从fp16量化到int8甚至int4降低内存消耗.
 
-    本项目采用平滑激活（SmoothQuant），动态混合精度分解（类似LLM.int8()），静态混合精度分解量化方案，通过对权重和激活值均采用int8量化，显著节省了内存并提升了推理速度.
+    本项目采用平滑激活（[SmoothQuant](https://arxiv.org/abs/2211.10438)），动态混合精度分解（类似[LLM.int8](https://arxiv.org/abs/2208.07339)），静态混合精度分解量化方案，通过对权重和激活值均采用int8量化，显著节省了内存并提升了推理速度。
 
 
 ## 运行方式
@@ -73,8 +73,10 @@
 ### 算子适配
 
  - protoc安装
+	
 	根据昇腾文档选择合适的protoc版本，protoc版本和CANN版本强相关。CANN7.0/7.2使用的protoc 1.13.0
-    ```
+    
+	```
     # 安装protoc==1.13.0， 找一空闲目录下载
     wget  https://obs-9be7.obs.cn-east-2.myhuaweicloud.com/wanzutao/tiny-llama/protobuf-all-3.13.0.tar.gz --no-check-certificate
     tar -zxvf protobuf-all-3.13.0.tar.gz
