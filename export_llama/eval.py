@@ -37,9 +37,6 @@ def ppl_eval_fn(args):
         if dataset == "wikitext":
             data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
             data = tokenizer("\n\n".join(data["text"]), return_tensors="pt")
-        elif dataset =="ptb":
-            data = load_dataset('ptb_text_only', 'penn_treebank', split='validation')
-            data = tokenizer(" ".join(data['sentence']), return_tensors="pt")
         elif dataset == "c4":
             data = load_dataset('allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation')
             data = tokenizer(" ".join(data[:]['text']), return_tensors="pt")
@@ -104,7 +101,7 @@ def parse_args():
     parser.add_argument(
         "--datasets","-d",
         type=str,
-        default="wikitext,c4,ptb",
+        default="wikitext,c4",
         help=" the dataset used to eval perplexity",
     )
     parser.add_argument(
