@@ -1,3 +1,4 @@
+# 仅权重int8量化
 def get(model_cfg,act_max):
 	quant_cfg = {}
 	for i in range(model_cfg.num_hidden_layers):

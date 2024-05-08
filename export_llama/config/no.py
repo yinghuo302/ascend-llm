@@ -1,2 +1,3 @@
+# 不进行量化
 def get(model_cfg,act_max):
-	return {} # 不进行量化
+	return {} 
