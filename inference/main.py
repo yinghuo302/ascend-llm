@@ -85,7 +85,7 @@ if __name__ == '__main__':
         hf_model_dir=args.hf_dir,
         model=args.model,
         max_cache_size=args.kv_size,
-        sampling=args.sampling,
+        sampling_method=args.sampling,
         sampling_value=args.sampling_value,
         temperature=args.temperature,
         session_type=args.engine,

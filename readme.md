@@ -65,10 +65,10 @@
 	对于batch, seq_len, kv_len, 请根据需要填入，建议设置batch=1, seq_len=1, kv_len=1024。如对于TinyLlama-1.1B
 	
 	```bash
-	atc --framework=5 --model="./tiny-llama.onnx"  --output="tiny-llama" --input_format=ND --input_shape="input_ids:1,1;attention_mask:1,1025;position_ids:1,1;past_key_values:22,2,1,4,1024,64" --log=debug --soc_version=Ascend310B1
+	atc --framework=5 --model="./tiny-llama.onnx"  --output="tiny-llama" --input_format=ND --input_shape="input_ids:1,1;attention_mask:1,1025;position_ids:1,1;past_key_values:22,2,1,4,1024,64" --log=debug --soc_version=Ascend310B1 --precision_mode=must_keep_origin_dtype
 	```
 	
-	对于Llama-2-7b，ATC转换占用内存较大，建议采用其他设备转换，如采用香橙派进行模型转换可以`export MAX_COMPILE_CORE_NUMBER=1`和`export MAX_COMPILE_CORE_NUMBER=1`，并开swap分区（推理时请关闭swap，会影响性能）。
+	对于Llama-2-7b，ATC转换占用内存较大，建议采用其他设备转换，如采用香橙派进行模型转换可以`export MAX_COMPILE_CORE_NUMBER=1`和`export TE_PARALLEL_COMPILER=1`，并开swap分区（推理时请关闭swap，会影响性能）。
 
 ### 算子适配
 

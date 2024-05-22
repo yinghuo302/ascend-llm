@@ -25,7 +25,7 @@ class InferenceConfig:
     evict_len:int = 64 # KVCache 逐出的最小值，当KVCache达到最大值时将逐出evict_len个KVCache
     n_layer:int = 22
     format:str='huggingface-tensor' #KVcache的格式
-    max_cache_size=256 # kvcache的最大长度
+    max_cache_size:int=256 # kvcache的最大长度
     head_num:int=4
     num_kv_group:int = 8 # for GQA
     head_dim:int=64
