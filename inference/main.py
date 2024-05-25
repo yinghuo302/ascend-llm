@@ -5,7 +5,7 @@ from config import InferenceConfig
 from inference import LlamaInterface
 
 def main(cli:bool,engine:LlamaInterface):
-    if len(sys.argv) > 1:
+    if cli:
         while True:
             line = input()
             print(engine.predict(line))
