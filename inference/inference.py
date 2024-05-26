@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from typing import Any, Generator, List,Tuple
+from typing import Any, Generator, List,Tuple,Dict
 from threading import Lock
 from session import Session
 from config import InferenceConfig
@@ -15,18 +15,21 @@ class LlamaInterface:
         self.temperature=config.temperature
         self.session=Session.fromConfig(config)
         self.prompt=config.prompt
-        self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}
-        self.reset()
-        self.lock = Lock()
+        self.state:dict[str,Any] = {"code":200,"isEnd":False,"message":""}        
         self.first=True
-        self.stop_mp = {"[|Human|]":6,"[|AI|]":5,"<|assistant|>":6,"<|user|>":5}
+        self.stop_mp = {"[|Human|]":6,"[|AI|]":5,"<|assistant|>":6,"<|user|>":5,"<|system|>":5}
+        self.stop_words = ["<|user|>","<|assistant|>","<|system|>","[|AI|]","[|Human|]"]
+        self.model_type = config.model_type
+        self.last_output=""
+        self.lock = Lock()
+        self.reset()
         print("init success")
 
     def generate_cache(self,prompt:str):
         if len(prompt) == 0 :
             return
-        self.first = False
-        input_ids = np.asarray(self.tokenizer.encode(prompt),dtype=np.int64).reshape(1,-1)
+        input_ids = np.asarray(self.encode(prompt,add_bos_token=self.first),dtype=np.int64).reshape(1,-1)
+        self.first=False
         logits = self.session.run(input_ids)[0]
         return self.sample_logits(logits[0][-1:],self.sampling_method,self.sampling_value,self.temperature),logits
 
@@ -70,55 +73,80 @@ class LlamaInterface:
 
         return next_token
 
+    
+    def format_last_output(self):
+        if len(self.last_output) == 0:
+            return 
+        text_format = self.apply_chat_template([{"role":"assistant","content":self.last_output}])
+        self.generate_cache(text_format[len(self.last_output):])
+        self.last_output = ""
+    
     def predict(self, text):
         with self.lock:
             self.state['isEnd'],self.state['message'] = False,""        
         if text == "":
             return
-        text = preprocess(text)
-        input_ids = self.tokenizer.encode(text)
-        if not self.first:
-            input_ids = [29871,13,29966] + input_ids[2:] # 暂时按tiny llama的tokenizer写死token id
-        self.first = False
+        self.format_last_output()
+        text = self.apply_chat_template([{"role":"user","content":text}])
+        input_ids = self.encode(text,add_bos_token=self.first)
         input_ids = np.asarray(input_ids,dtype=np.int64).reshape(1,-1)
-        ids_list = []
+        self.first,ids_list = False,[]
         for i in range(self.max_length):
             logits = self.session.run(input_ids)[0]
             input_ids = self.sample_logits(logits[0][-1:], self.sampling_method, self.sampling_value, self.temperature)
             input_ids = input_ids.reshape(1, -1)
-            with self.lock:
-                if input_ids[0] == self.tokenizer.eos_token_id:
-                    self.state['message'],self.state['isEnd'] = self.tokenizer.decode(ids_list),True
-                    break
-                ids_list.append(input_ids[0].item())
-                text_out = self.tokenizer.decode(ids_list)
-                # stop_word = is_stop_word_or_prefix(text_out, ["[|Human|]", "[|AI|]"])
-                stop_word = is_stop_word_or_prefix(text_out,["<|user|>","<|assistant|>"])
-                if stop_word != "":
-                    self.state['message'],self.state['isEnd'] = text_out[:-len(stop_word)].strip(),True
-                    #!将结束符对应的KVCache rollback
-                    self.session.rollback(self.stop_mp[stop_word]) 
-                    break
-                self.state['message']=text_out
+            if input_ids[0] == self.tokenizer.eos_token_id:
+                self.session.rollback(1) 
+                break
+            ids_list.append(input_ids[0].item())
+            text_out = self.tokenizer.decode(ids_list)
+            stop_word = is_stop_word_or_prefix(text_out,self.stop_words)
+            if stop_word != "":
+                ids_list = ids_list[:-self.stop_mp[stop_word]]
+                self.session.rollback(self.stop_mp[stop_word]) 
+                break
+            if i%3 == 0:
+                with self.lock:
+                    self.state['message']=text_out
+        self.last_output = self.tokenizer.decode(ids_list)
         with self.lock:
-            self.state['isEnd'] = True 
-        return self.state['message']
+            self.state['message'],self.state['isEnd'] = self.last_output,True
+        return self.last_output
 
     def reset(self):
         self.first = True
+        self.last_output = ""
         self.session.reset()
-        self.generate_cache(self.prompt)
+        self.generate_cache(self.apply_chat_template(self.prompt))
         
     def getState(self):
         with self.lock:
             return self.state.copy()
 
-#!将输入转换为指定格式
-def preprocess(text:str) -> str:
-    # return f"[|Human|]{text}\n[|AI|]" 
-    return f'<|user|>\n{text}</s>\n<|assistant|>'
+    def apply_chat_template(self,messages:List[Dict[str,str]]) -> str:
+        text = ""
+        if self.model_type == "llama-2-7b":
+            for message in messages:
+                if message["role"] == "user":
+                    text += f'[|Human|]\n{message["content"]}\n[|AI|]'
+                elif message["role"] == "system":
+                    text += f'[|System|]\n{message["content"]}\n'
+                else:
+                    text += f'{message["content"]}\n'
+        elif self.model_type == "tiny-llama":
+            for message in messages:
+                if message["role"] == "user":
+                    text += f'<|user|>\n{message["content"]}</s>\n<|assistant|>'
+                elif message["role"] == "system":
+                    text += f'<|system|>\n{message["content"]}</s>\n'
+                else:
+                    text += f'{message["content"]}</s>\n'
+        return text
+    
+    def encode(self,text,add_bos_token=False):
+        self.tokenizer.add_bos_token = add_bos_token
+        return self.tokenizer.encode(text)
 
-#!判断是否为结束语
 def is_stop_word_or_prefix(s: str, stop_words: list) -> int:
     for stop_word in stop_words:
         if s.endswith(stop_word):

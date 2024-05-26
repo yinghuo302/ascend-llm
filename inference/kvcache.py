@@ -162,7 +162,7 @@ class H2O(KVCache):
         # score [n_layer,batch,nheader,input_len,all_len]
         if self.num_kv_group != 1:
             score = score.reshape(self.n_layer,1,self.num_kv_group,self.head_num,seq_len,-1).sum(axis=2)
-        else:
+        elif not score.flags.writeable:
             score = score.copy() # acl 返回的ndarray不可写
         score[:,:,:,:,self.kv_size:self.kv_size+seq_len] = score[:,:,:,:,-seq_len:]
         if self.kv_size + seq_len > self.max_size:

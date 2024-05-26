@@ -52,7 +52,7 @@ class OnnxSession(Session):
 			r = min(seq_len,r)
 			cache,mask,pos_ids = self.kvCache.getInputs(r-l)
 			result = self.llm_session.run(None,{
-				"input_ids": input_ids,
+				"input_ids": input_ids[:,l:r],
 				"attention_mask":mask,
 				"past_key_values": cache,
 				"position_ids": pos_ids,
