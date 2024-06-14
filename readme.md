@@ -4,7 +4,7 @@
 
 本项目基于昇腾310芯片部署大语言模型，目前已经成功运行meta-llama/Llama-2-7b-hf和TinyLlama/TinyLlama-1.1B-Chat-v1.0。
 
-本实践项目由南京大学计算机科学与技术系杜骋同学主导，由朱光辉老师进行指导，由昇腾CANN生态使能团队提供技术支持。
+本实践项目由南京大学计算机科学与技术系杜骋同学主导，由朱光辉老师进行指导，由昇腾CANN生态使能团队提供技术支持，并在昇腾开发者大会2024进行了展示。
 
 ## 效果预览
 
@@ -44,31 +44,6 @@
    ```
 
 本项目测试环境：香橙派AI pro，CANN 7.0/7.2，python 3.9。
-
-### 模型量化与导出
-
-1. 导出onnx：将transformer库中的modeling_llama替换为export_llama文件下的[modeling_llama](./export_llama/modeling_llama_4.35.py)。通过一下命令将模型导出为onnx（相对路径均为相对export_llama.py文件）
-	```bash
-	python export_llama.py \
-		--model <model_name_or_path> \
-		--output <output_onnx_file_path> \
-		--act-path <act_scales_file_path>
-		--quant <quant_config_file_path>
-	```
-	模型量化具体见[readme](./export_llama/readme.md)。对于TinyLlama-1.1B建议采用per-token的absmax量化（即w8x8.py）或者平滑激活（即smooth.py）；对于Llama-2-7b-hf，建议采用静态混合精度分解（即sd.py）或者平滑激活+静态混合精度分解(即smsd.py)。已经测试的方案为TinyLlama-1.1B per-token的absmax量化，Llama-2-7b-hf 静态混合精度分解。
-3. ATC模型转换
-	``` bash
-	atc --framework=5 --model="xxx.onnx"  --output="xxx" --input_format=ND --input_shape="input_ids:batch,seq_len;attention_mask:batch,seq_len+kv_len;position_ids:batch,seq_len;past_key_values:n_layer,2,batch,n_head,kv_len,head_dim" --log=debug --soc_version=Ascend310B1 --precision_mode=must_keep_origin_dtype
-	```
-	上述的n_layer, n_head, head_dim变量由模型决定。对于Llama-2-7b，n_layer=32, n_head=32, head_dim=128；对于TinyLlama-1.1B，n_layer=22, n_head=4, head_dim=64
-	
-	对于batch, seq_len, kv_len, 请根据需要填入，建议设置batch=1, seq_len=1, kv_len=1024。如对于TinyLlama-1.1B
-	
-	```bash
-	atc --framework=5 --model="./tiny-llama.onnx"  --output="tiny-llama" --input_format=ND --input_shape="input_ids:1,1;attention_mask:1,1025;position_ids:1,1;past_key_values:22,2,1,4,1024,64" --log=debug --soc_version=Ascend310B1 --precision_mode=must_keep_origin_dtype
-	```
-	
-	对于Llama-2-7b，ATC转换占用内存较大，建议采用其他设备转换，如采用香橙派进行模型转换可以`export MAX_COMPILE_CORE_NUMBER=1`和`export TE_PARALLEL_COMPILER=1`，并开swap分区（推理时请关闭swap，会影响性能）。
 
 ### 算子适配
 
@@ -115,6 +90,33 @@
     cd $ASCEND_PATH/opp/vendors/customize
     rm -rf op_impl/ op_proto/
     ```
+
+### 模型量化与导出
+
+导出的模型可以从[阿里云盘](https://www.alipan.com/s/ro1NDLjFxtf)中下载
+
+1. 导出onnx：将transformer库中的modeling_llama替换为export_llama文件下的[modeling_llama](./export_llama/modeling_llama_4.35.py)。通过一下命令将模型导出为onnx（相对路径均为相对export_llama.py文件）
+	```bash
+	python export_llama.py \
+		--model <model_name_or_path> \
+		--output <output_onnx_file_path> \
+		--act-path <act_scales_file_path>
+		--quant <quant_config_file_path>
+	```
+	模型量化具体见[readme](./export_llama/readme.md)。对于TinyLlama-1.1B建议采用per-token的absmax量化（即w8x8.py）或者平滑激活（即smooth.py）；对于Llama-2-7b-hf，建议采用静态混合精度分解（即sd.py）或者平滑激活+静态混合精度分解(即smsd.py)。已经测试的方案为TinyLlama-1.1B per-token的absmax量化，Llama-2-7b-hf 静态混合精度分解。
+3. ATC模型转换
+	``` bash
+	atc --framework=5 --model="xxx.onnx"  --output="xxx" --input_format=ND --input_shape="input_ids:batch,seq_len;attention_mask:batch,seq_len+kv_len;position_ids:batch,seq_len;past_key_values:n_layer,2,batch,n_head,kv_len,head_dim" --log=debug --soc_version=Ascend310B1 --precision_mode=must_keep_origin_dtype
+	```
+	上述的n_layer, n_head, head_dim变量由模型决定。对于Llama-2-7b，n_layer=32, n_head=32, head_dim=128；对于TinyLlama-1.1B，n_layer=22, n_head=4, head_dim=64
+	
+	对于batch, seq_len, kv_len, 请根据需要填入，建议设置batch=1, seq_len=1, kv_len=1024。如对于TinyLlama-1.1B
+	
+	```bash
+	atc --framework=5 --model="./tiny-llama.onnx"  --output="tiny-llama" --input_format=ND --input_shape="input_ids:1,1;attention_mask:1,1025;position_ids:1,1;past_key_values:22,2,1,4,1024,64" --log=debug --soc_version=Ascend310B1 --precision_mode=must_keep_origin_dtype
+	```
+	
+	对于Llama-2-7b，ATC转换占用内存较大，建议采用其他设备转换，如采用香橙派进行模型转换可以`export MAX_COMPILE_CORE_NUMBER=1`和`export TE_PARALLEL_COMPILER=1`，并开swap分区（推理时请关闭swap，会影响性能）。
 
 ### 模型推理运行 
 

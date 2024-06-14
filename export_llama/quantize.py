@@ -61,7 +61,7 @@ def qMatmul(x_q:Tensor,x_max:Tensor,weight_q:Tensor,w_max:Tensor,dtype):
 class W8Linear(nn.Module):
     def __init__(self, origin_weight:Tensor, bias: Optional[Tensor] = None,act_max:Optional[Tensor] = None,alpha=32):
         super().__init__()
-        self.bias = None if bias is None else bias.detach()
+        self.bias = None if bias is None else nn.Parameter(bias,requires_grad=False)
         self.dtype = origin_weight.dtype
         self.alpha = alpha
         self.weight_q,self.max_val = quantize_mat(origin_weight.detach())
@@ -75,18 +75,18 @@ class W8Linear(nn.Module):
 class W8X8Linear(nn.Module):
     def __init__(self, ori_w:Tensor, bias: Optional[Tensor] = None,act_max:Optional[Tensor] = None,alpha=32):
         super().__init__()
-        self.bias = None if bias is None else bias.detach()
+        self.bias = None if bias is None else nn.Parameter(bias,requires_grad=False)
         self.dtype = ori_w.dtype
         self.alpha = alpha
         self.scales = None
         if act_max is not None:
             act_max = act_max.to(ori_w.device)
             self.scales = (act_max.pow(alpha) / ori_w.abs().max(dim=0)[0].pow(1 - alpha)).clamp(min=1e-5).to(dtype=ori_w.dtype)
-            self.scales = nn.Parameter(self.scales,requires_grad=False).detach()
+            self.scales = nn.Parameter(self.scales,requires_grad=False)
             ori_w = ori_w.detach().mul(self.scales)
         self.weight_q,self.max_val = quantize_mat(ori_w.detach())
-        self.weight_q = nn.Parameter(self.weight_q.t(),requires_grad=False).detach()
-        self.max_val = nn.Parameter(self.max_val,requires_grad=False).detach()
+        self.weight_q = nn.Parameter(self.weight_q.t(),requires_grad=False)
+        self.max_val = nn.Parameter(self.max_val,requires_grad=False)
 
     def forward(self,x:Tensor) -> Tensor:
         if self.scales is not None:
@@ -101,7 +101,7 @@ class W8X8Linear(nn.Module):
 class W8SDLinear(nn.Module):
     def __init__(self, origin_weight:Tensor, bias: Optional[Tensor] = None,act_max:Optional[Tensor] = None,alpha=32):
         super().__init__()
-        self.bias = None if bias is None else bias.detach()
+        self.bias = None if bias is None else nn.Parameter(bias,requires_grad=False)
         self.dtype = origin_weight.dtype
         self.alpha = alpha
         if act_max is not None:
@@ -129,7 +129,7 @@ class W8SDLinear(nn.Module):
 class W8DXLinear(nn.Module):
     def __init__(self, origin_weight:Tensor, bias: Optional[Tensor] = None,act_max:Optional[Tensor] = None,alpha=32):
         super().__init__()
-        self.bias = None if bias is None else bias.detach()
+        self.bias = None if bias is None else nn.Parameter(bias,requires_grad=False)
         self.dtype = origin_weight.dtype
         self.alpha = alpha
         self.weight_q,self.max_val = quantize_mat(origin_weight.detach())
